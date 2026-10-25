@@ -73,6 +73,17 @@ button { font: inherit; color: inherit; }
 }
 #screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
+.iconbtn.exit { border-color: #6b2a2a; color: #ffb4a6; }
+@media (max-width: 430px) { #app.ingame .brand { display: none; } #app.ingame .chip { margin-left: 0; margin-right: auto; } }
+.req { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--mustard); margin-left: 4px; }
+input.missing { border-color: var(--tomato) !important; box-shadow: 0 0 0 3px var(--tomato); }
+.clock { margin: 2px 0 0; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.clock b { display: inline-block; min-width: 3.2ch; padding: 1px 7px; border-radius: 99px; background: var(--rail); color: var(--paper); font-variant-numeric: tabular-nums; }
+.clock.urgent b { background: var(--tomato); color: #fff; animation: pulse .9s ease-in-out infinite; }
+.sheet .clock { color: #6d6488; }
+.sheet .clock b { background: #e9dfc6; color: var(--ink); }
+.sheet .clock.urgent b { background: var(--tomato); color: #fff; }
+@keyframes pulse { 50% { transform: scale(1.12); } }
 /* Buttons */
 .btn {
   font-family: var(--display); font-size: 16px; letter-spacing: .02em; line-height: 1.1;
@@ -235,6 +246,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     <span class="brand">Boom Whiskers</span>
     <span id="chip" class="chip">Connecting</span>
     <button class="iconbtn" data-act="rules" aria-label="How to play">Rules</button>
+    <button class="iconbtn exit" id="exitbtn" data-act="exit" hidden>Leave</button>
   </header>
   <main id="screen"></main>
 </div>
@@ -719,6 +731,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 <script>// Boom Whiskers rules engine. Host-authoritative, two players.
 (function (root) {
   const WINDOW = 4000; // ms the other player has to play a Nope
+  const TURN_MS = 60000; // ms a player has for each move before the game moves for them
   const COUNTS = { E: 4, D: 6, N: 5, A: 4, S: 4, F: 4, H: 4, P: 5, '1': 4, '2': 4, '3': 4, '4': 4, '5': 4 };
   const HAND_ORDER = 'DNASFHP12345E';
   const ACTIONS = 'ASFHP';
@@ -742,7 +755,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       names: names.slice(), hands, deck, disc: [],
       turn: prev && prev.win >= 0 ? 1 - prev.win : (rnd() < 0.5 ? 0 : 1), left: 1,
       ph: 'play', pend: null, need: -1, favorTo: -1, peek: null, log: [],
-      win: -1, nid: prev ? prev.nid : 0, gid: prev ? prev.gid + 1 : 1, lastN: prev ? prev.lastN : 0,
+      win: -1, deadline: null, nid: prev ? prev.nid : 0, gid: prev ? prev.gid + 1 : 1, lastN: prev ? prev.lastN : 0,
       guestCid: prev ? prev.guestCid : null
     };
   }
@@ -820,8 +833,29 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     }
   }
 
-  // Applies one action from a seat. Returns {ok} or {err}.
+  const needsAct = (G) => G.ph === 'play' || G.ph === 'defuse' || G.ph === 'favor' || G.ph === 'pick';
+  const actor = (G) => (G.ph === 'play' ? G.turn : G.need);
+  function arm(G, now) { G.deadline = needsAct(G) ? now + TURN_MS : null; }
+
+  // Applies one action from a seat and restarts the move clock. Returns {ok} or {err}.
   function dispatch(G, seat, a, now, rnd) {
+    const r = apply(G, seat, a, now, rnd);
+    if (r.ok) arm(G, now);
+    return r;
+  }
+
+  // When the clock runs out, the game makes the move: draw, hide at random, give or take a random card.
+  function timeout(G, now, rnd) {
+    const s = actor(G);
+    note(G, s, 'timeout');
+    if (G.ph === 'play') apply(G, s, { t: 'draw' }, now, rnd);
+    else if (G.ph === 'defuse') apply(G, s, { t: 'defuseAt', pos: Math.floor(rnd() * (G.deck.length + 1)) }, now, rnd);
+    else if (G.ph === 'favor') { const h = G.hands[s]; apply(G, s, { t: 'give', card: h[Math.floor(rnd() * h.length)] }, now, rnd); }
+    else if (G.ph === 'pick') { const d = G.disc.filter((c) => c !== 'E'); apply(G, s, { t: 'pick', card: d[Math.floor(rnd() * d.length)] }, now, rnd); }
+    arm(G, now);
+  }
+
+  function apply(G, seat, a, now, rnd) {
     rnd = rnd || Math.random;
     const err = (m) => ({ err: m });
     if (!a || typeof a.t !== 'string') return err('bad action');
@@ -925,9 +959,12 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     return err('Unknown action.');
   }
 
-  // Closes the Nope window once its time is up. Returns true if state changed.
+  // Closes the Nope window and enforces the move clock. Returns true if state changed.
   function tick(G, now, rnd) {
-    if (G.ph === 'pending' && now >= G.pend.end) { resolve(G, rnd || Math.random); return true; }
+    rnd = rnd || Math.random;
+    if (G.ph === 'pending' && now >= G.pend.end) { resolve(G, rnd); arm(G, now); return true; }
+    if (needsAct(G) && G.deadline == null) { arm(G, now); return true; }
+    if (needsAct(G) && now >= G.deadline) { timeout(G, now, rnd); return true; }
     return false;
   }
 
@@ -939,7 +976,8 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       hand: sortHand(G.hands[seat]).join(''), oc: G.hands[o].length,
       dk: G.deck.length, disc: G.disc.join(''),
       turn: G.turn, left: G.left, need: G.need, win: G.win,
-      ack: G.lastN, gid: G.gid, pend: null, peek: null
+      ack: G.lastN, gid: G.gid, pend: null, peek: null,
+      dl: G.deadline != null && needsAct(G) ? Math.max(0, G.deadline - now) : null
     };
     if (G.pend) {
       const ch = G.pend.chain;
@@ -951,7 +989,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     return v;
   }
 
-  const Engine = { WINDOW, COUNTS, newGame, dispatch, tick, viewFor, comboKind, sortHand, shuffle };
+  const Engine = { WINDOW, TURN_MS, COUNTS, newGame, dispatch, tick, viewFor, comboKind, sortHand, shuffle };
   if (typeof module !== 'undefined') module.exports = Engine; else root.Engine = Engine;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
@@ -997,7 +1035,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   let sel = [], focus = null, local = null, seenPeek = 0;
   let actN = 0, lastAct = null, busy = false, guestErr = null;
   let partnerHere = false, full = false, pendEnd = 0, lookStart = 0, lastViewObj = null;
-  let defusePos = 0, modalKey = '', screenKey = '';
+  let defusePos = 0, modalKey = '', screenKey = '', clockEnd = 0, closedBy = '';
 
   // ---------- networking ----------
   function newCode() {
@@ -1013,7 +1051,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   function hostPublish() {
     const view = G ? Engine.viewFor(G, 1, Date.now()) : { ph: 'lobby' };
     if (G && guestErr) view.err = guestErr;
-    presence({ g: code, role: 'host', cid, name: myName || 'Player 1', gcid: G ? G.guestCid : null, view, act: null });
+    presence({ g: code, role: 'host', cid, name: myName || 'Player 1', gcid: G ? G.guestCid : null, view, act: null, closed: null });
   }
   function guestPublish() {
     presence({ g: code, role: 'guest', cid, name: myName || 'Player 2', act: lastAct, view: null, gcid: null });
@@ -1022,6 +1060,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (!V || V.gid !== nv.gid) { seenPeek = nv.peek ? (V ? 0 : nv.peek.id) : 0; sel = []; }
     V = nv;
     pendEnd = V.pend ? Date.now() + V.pend.rem : 0;
+    clockEnd = V.dl != null ? Date.now() + V.dl : 0;
     const have = V.hand.split('');
     sel = sel.filter((c) => { const i = have.indexOf(c); if (i < 0) return false; have.splice(i, 1); return true; });
   }
@@ -1064,6 +1103,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (!!host !== partnerHere) { partnerHere = !!host; changed = true; }
     if (host) {
       const pr = host.presence;
+      if (pr.closed) { roomClosed(clean(pr.name) || 'Your friend'); return; }
       if (pr.gcid && pr.gcid !== cid) { if (!full) { full = true; changed = true; } }
       else if (pr.view && pr.view !== lastViewObj) {
         lastViewObj = pr.view;
@@ -1096,7 +1136,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   }
   function hostStart(resume) {
     mode = 'host'; full = false; guestErr = null; V = null; partnerHere = false;
-    if (resume) { code = resume.code; G = resume.G; } else { code = newCode(); G = null; store.del('bw-host'); }
+    if (resume) { code = resume.code; G = resume.G; G.deadline = null; if (G.pend) G.pend.end = Date.now() + WIN; } else { code = newCode(); G = null; store.del('bw-host'); }
     screen = G ? 'table' : 'hostwait';
     commit();
     if (room) hostOnPeers();
@@ -1109,11 +1149,23 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     render();
     if (room) guestOnPeers();
   }
+  function reset(toScreen) {
+    mode = null; code = null; G = null; V = null; screen = toScreen; local = null; sel = []; partnerHere = false; busy = false; lastAct = null;
+  }
+  // Host leaving closes the room: tell the guest first, then disconnect.
   function leave() {
-    if (mode === 'host') store.del('bw-host');
+    const wasHost = mode === 'host';
+    if (wasHost) { store.del('bw-host'); presence({ closed: true, view: null }); }
     if (mode === 'guest') store.del('bw-guest');
-    mode = null; code = null; G = null; V = null; screen = 'lobby'; local = null; sel = []; partnerHere = false;
-    presence({ g: null, role: null, view: null, act: null, gcid: null });
+    reset('lobby');
+    render();
+    setTimeout(() => { if (!mode) presence({ g: null, role: null, view: null, act: null, gcid: null, closed: null }); }, wasHost ? 800 : 0);
+  }
+  function roomClosed(name) {
+    store.del('bw-guest');
+    closedBy = name;
+    reset('closed');
+    presence({ g: null, role: null, view: null, act: null, gcid: null, closed: null });
     render();
   }
 
@@ -1149,6 +1201,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       case 'give': return you ? `You gave ${c === '?' ? 'a card' : NAMES[c]}.` : `${W} gave you ${c === '?' ? 'a card' : NAMES[c]}.`;
       case 'pick': return `${W} took ${NAMES[c]} from the discard pile.`;
       case 'boom': return `${W} exploded!`;
+      case 'timeout': return `${W} ran out of time.`;
     }
     return '';
   }
@@ -1184,6 +1237,10 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     }
     chip.textContent = txt;
     chip.className = 'chip ' + tone;
+    const ex = $('#exitbtn');
+    ex.hidden = !mode;
+    ex.textContent = mode === 'host' ? 'Close room' : 'Leave';
+    $('#app').classList.toggle('ingame', !!mode);
   }
 
   function lobbyHTML() {
@@ -1202,8 +1259,8 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       <h1>Boom Whiskers</h1>
       <p class="lede">A card game for two phones. Draw cards, dodge the Kaboom Cat, and be the last cat standing.</p>
       <div class="form">
-        <label for="name">Your name</label>
-        <input id="name" maxlength="14" autocomplete="nickname" placeholder="e.g. Mae" value="${esc(myName)}">
+        <label for="name">Your name <span class="req">needed to play</span></label>
+        <input id="name" maxlength="14" autocomplete="nickname" placeholder="e.g. Mae" required value="${esc(myName)}">
         <button class="btn hot big" data-act="host" ${can ? '' : 'disabled'}>Start a game</button>
         <div class="or"><span>or join your friend</span></div>
         <div class="joinrow">
@@ -1238,6 +1295,20 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     </section>`;
   }
 
+  function clockHTML(v) {
+    if (v.dl == null) return '';
+    const act = v.ph === 'play' ? v.turn : v.need;
+    const label = act === v.you ? 'Your time' : esc(v.names[act]) + '’s time';
+    return `<p class="clock">${label} <b class="clockv">${Math.ceil(v.dl / 1000)}s</b></p>`;
+  }
+  function closedHTML() {
+    return `<section class="wait">
+      <p class="eyebrow">Room closed</p>
+      <h1>Game over</h1>
+      <p class="lede">${esc(closedBy)} closed the room. Start a new game or join another one from the menu.</p>
+      <button class="btn hot" data-act="menu">Back to menu</button>
+    </section>`;
+  }
   function statusHTML(v) {
     const me = v.you, op = 1 - me, oname = esc(v.names[op]);
     if (v.ph === 'pending' && v.pend) {
@@ -1264,7 +1335,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       t = `${oname}’s turn`;
       s = v.left > 1 ? `${v.left} turns to go for them.` : 'Keep a Nope Paw ready.';
     }
-    return `<p class="st-title ${v.turn === me && v.ph === 'play' ? 'me' : ''}">${t}</p><p class="st-sub">${s}</p>`;
+    return `<p class="st-title ${v.turn === me && v.ph === 'play' ? 'me' : ''}">${t}</p><p class="st-sub">${s}</p>${clockHTML(v)}`;
   }
 
   function tableHTML(v) {
@@ -1349,12 +1420,19 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (screen === 'lobby') el.innerHTML = lobbyHTML();
     else if (screen === 'hostwait') el.innerHTML = hostWaitHTML();
     else if (screen === 'join') el.innerHTML = joinHTML();
+    else if (screen === 'closed') el.innerHTML = closedHTML();
   }
 
   // ---------- modals ----------
   function sheet(title, body, cls) { return `<div class="sheet ${cls || ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">${body}</div>`; }
   function modalSpec() {
     if (local && local.k === 'rules') return { key: 'rules', html: rulesHTML() };
+    if (local && local.k === 'exit') {
+      const other = V ? esc(V.names[1 - V.you]) : 'your friend';
+      return { key: 'exit', html: mode === 'host'
+        ? sheet('Close room', `<h2>Close this room?</h2><p class="sub">The game ends for both of you and the code stops working.</p><div class="btns"><button class="btn hot" data-act="closeroom">Close room</button><button class="btn ghost ink" data-act="close">Keep playing</button></div>`)
+        : sheet('Leave game', `<h2>Leave the game?</h2><p class="sub">You can come back with the same code while ${other} keeps the room open.</p><div class="btns"><button class="btn hot" data-act="closeroom">Leave</button><button class="btn ghost ink" data-act="close">Stay</button></div>`) };
+    }
     if (screen !== 'table' || !V) return null;
     const v = V, me = v.you, oname = esc(v.names[1 - me]);
     if (v.ph === 'over') {
@@ -1377,15 +1455,15 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
         <label class="slab" for="dpos">Position: <b id="dposl">${posLabel(defusePos, dk)}</b></label>
         <input type="range" id="dpos" min="0" max="${dk}" step="1" value="${defusePos}">
         <div class="quick"><button class="chipbtn" data-act="dq" data-p="0">Top</button><button class="chipbtn" data-act="dq" data-p="1">2nd</button><button class="chipbtn" data-act="dq" data-p="rand">Random</button><button class="chipbtn" data-act="dq" data-p="${dk}">Bottom</button></div>
-        <div class="btns one"><button class="btn hot" data-act="hide" ${busy ? 'disabled' : ''}>Hide it here</button></div>`) };
+        ${clockHTML(v)}<div class="btns one"><button class="btn hot" data-act="hide" ${busy ? 'disabled' : ''}>Hide it here</button></div>`) };
     }
     if (v.ph === 'favor' && v.need === me) {
       const grid = uniqueOf(v.hand).map((c) => `<button class="pickcard" data-act="give" data-t="${c}" ${busy ? 'disabled' : ''}>${cardSVG(c)}</button>`).join('');
-      return { key: 'favor:' + v.gid + ':' + v.hand + ':' + busy, html: sheet('Give a card', `<h2>${oname} played Big Eyes</h2><p class="sub">Pick one card to give them.</p><div class="grid">${grid}</div>`) };
+      return { key: 'favor:' + v.gid + ':' + v.hand + ':' + busy, html: sheet('Give a card', `<h2>${oname} played Big Eyes</h2><p class="sub">Pick one card to give them.</p>${clockHTML(v)}<div class="grid">${grid}</div>`) };
     }
     if (v.ph === 'pick' && v.need === me) {
       const grid = uniqueOf(v.disc).filter((c) => c !== 'E').map((c) => `<button class="pickcard" data-act="pickd" data-t="${c}" ${busy ? 'disabled' : ''}>${cardSVG(c)}</button>`).join('');
-      return { key: 'pick:' + v.gid + ':' + v.disc + ':' + busy, html: sheet('Take from discard', `<h2>Five different!</h2><p class="sub">Take any card from the discard pile.</p><div class="grid">${grid}</div>`) };
+      return { key: 'pick:' + v.gid + ':' + v.disc + ':' + busy, html: sheet('Take from discard', `<h2>Five different!</h2><p class="sub">Take any card from the discard pile.</p>${clockHTML(v)}<div class="grid">${grid}</div>`) };
     }
     if (v.peek && v.peek.id > seenPeek) {
       const cards = v.peek.cards.split('');
@@ -1431,6 +1509,10 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 
   // ---------- countdown + toast ----------
   function tickCountdown() {
+    if (clockEnd) {
+      const secs = Math.max(0, Math.ceil((clockEnd - Date.now()) / 1000));
+      document.querySelectorAll('.clockv').forEach((el) => { el.textContent = secs + 's'; el.parentNode.classList.toggle('urgent', secs <= 10); });
+    }
     const b = document.getElementById('cdbar');
     if (!b) return;
     const rem = Math.max(0, pendEnd - Date.now());
@@ -1447,7 +1529,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 
   // ---------- input ----------
   document.addEventListener('input', (e) => {
-    if (e.target.id === 'name') { myName = clean(e.target.value); store.set('bw-name', myName); }
+    if (e.target.id === 'name') { myName = clean(e.target.value); store.set('bw-name', myName); e.target.classList.remove('missing'); }
     if (e.target.id === 'code') e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (e.target.id === 'dpos') { defusePos = Number(e.target.value); const l = $('#dposl'); if (l && V) l.textContent = posLabel(defusePos, V.dk); }
   });
@@ -1455,21 +1537,35 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (e.key === 'Enter' && e.target.id === 'code') { e.preventDefault(); const b = $('[data-act="join"]'); if (b) b.click(); }
     if (e.key === 'Escape' && local) { local = null; render(); }
   });
+  function takeName() {
+    const inp = $('#name');
+    const n = clean(inp ? inp.value : myName);
+    if (!n) {
+      toast('Add your name first.');
+      if (inp) { inp.classList.add('missing'); inp.focus(); }
+      return false;
+    }
+    myName = n; store.set('bw-name', myName);
+    return true;
+  }
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled) return;
     const a = b.dataset.act, t = b.dataset.t;
     switch (a) {
-      case 'host': myName = clean(($('#name') || {}).value) || myName; store.set('bw-name', myName); hostStart(null); break;
+      case 'host': if (!takeName()) return; hostStart(null); break;
       case 'join': {
-        myName = clean(($('#name') || {}).value) || myName; store.set('bw-name', myName);
+        if (!takeName()) return;
         const c = (($('#code') || {}).value || '').toUpperCase();
         if (!/^[A-Z0-9]{4}$/.test(c)) { toast('Type the 4-character code from your friend.'); return; }
         guestJoin(c);
         break;
       }
-      case 'resume': { const r = store.get('bw-host'); if (r) hostStart(r); break; }
-      case 'rejoin': { const r = store.get('bw-guest'); if (r) guestJoin(r.code); break; }
+      case 'resume': { if (!takeName()) return; const r = store.get('bw-host'); if (r) hostStart(r); break; }
+      case 'rejoin': { if (!takeName()) return; const r = store.get('bw-guest'); if (r) guestJoin(r.code); break; }
+      case 'exit': local = { k: 'exit' }; render(); break;
+      case 'closeroom': local = null; leave(); break;
+      case 'menu': screen = 'lobby'; screenKey = ''; render(); break;
       case 'leave': leave(); break;
       case 'copy': {
         const done = () => toast('Code copied');
