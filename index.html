@@ -163,7 +163,9 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 .played .mini { width: 44px; margin: 0 -6px; filter: drop-shadow(0 3px 0 rgba(0,0,0,.3)); }
 .nopes { position: absolute; right: -14px; top: 10px; display: flex; }
 .nopes .mini { width: 40px; margin-left: -28px; transform: rotate(16deg); }
-.cd { width: 100%; max-width: 160px; height: 7px; border-radius: 9px; background: var(--rail); overflow: hidden; }
+.cdrow { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 190px; }
+.cdrow b { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 3ch; color: var(--mustard); }
+.cd { flex: 1; width: 100%; max-width: 160px; height: 7px; border-radius: 9px; background: var(--rail); overflow: hidden; }
 .cd i { display: block; height: 100%; width: 100%; background: var(--mustard); border-radius: 9px; }
 @keyframes pop { from { transform: scale(.85); opacity: .3; } to { transform: none; opacity: 1; } }
 .log { all: unset; cursor: pointer; display: block; min-height: 3.6em; padding: 6px 10px; border-radius: 12px; background: rgba(13,10,26,.35); }
@@ -188,6 +190,11 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 .btns.one { grid-template-columns: 1fr; }
 .waitline { grid-column: 1 / -1; margin: 0; min-height: 52px; display: grid; place-items: center; color: var(--muted); font-weight: 600; text-align: center; border: 2px dashed var(--rail); border-radius: 14px; padding: 6px 12px; }
 
+.logrow { display: flex; gap: 8px; align-items: stretch; }
+.logrow .log { flex: 1; min-width: 0; }
+.chatbtn { position: relative; flex: 0 0 auto; width: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px solid var(--rail); background: rgba(13,10,26,.35); color: var(--paper); border-radius: 12px; cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.chatbtn svg { width: 22px; height: 22px; }
+.unread { position: absolute; top: -8px; right: -6px; min-width: 22px; height: 22px; border-radius: 99px; background: var(--tomato); color: #fff; border: 2px solid var(--ink); font-style: normal; font-size: 12px; display: grid; place-items: center; padding: 0 5px; }
 /* Modal sheets */
 #modal { position: fixed; inset: 0; z-index: 20; background: rgba(9, 7, 18, .74); display: flex; align-items: flex-end; justify-content: center; padding: 12px max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
 .sheet { width: 100%; max-width: 460px; max-height: 100%; overflow-y: auto; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 22px; padding: 18px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 0 var(--deep); animation: rise .22s ease-out; }
@@ -225,6 +232,16 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 .rules li { display: grid; grid-template-columns: 46px 1fr; gap: 10px; align-items: start; font-size: 14px; }
 .rules .tiny { width: 46px; }
 .rules .role { background: #e9dfc6; color: #4b4366; }
+.chatsheet { height: min(78vh, 560px); }
+.chathead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chatlist { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 4px 2px; display: flex; flex-direction: column; gap: 8px; }
+.chatlist li { max-width: 82%; align-self: flex-start; background: #fff; border: 2px solid var(--ink); border-radius: 14px 14px 14px 4px; padding: 6px 10px; overflow-wrap: anywhere; }
+.chatlist li b { display: block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #6d6488; }
+.chatlist li.me { align-self: flex-end; background: var(--mustard); border-radius: 14px 14px 4px 14px; }
+.chatlist li.pending { opacity: .6; }
+.chatlist li.none { align-self: center; background: none; border: 0; color: #6d6488; }
+.chatform { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+#chatin { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: #fff; border: 3px solid var(--ink); border-radius: 12px; padding: 10px 12px; min-height: 46px; }
 .fulllog { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .fulllog li:first-child { font-weight: 800; }
 #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(150px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 14px; padding: 10px 14px; font-weight: 600; max-width: min(92vw, 420px); text-align: center; box-shadow: 0 4px 0 var(--deep); }
@@ -730,7 +747,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 </script>
 <script>// Boom Whiskers rules engine. Host-authoritative, two players.
 (function (root) {
-  const WINDOW = 4000; // ms the other player has to play a Nope
+  const WINDOW = 30000; // ms the other player has to play a Nope
   const TURN_MS = 60000; // ms a player has for each move before the game moves for them
   const COUNTS = { E: 4, D: 6, N: 5, A: 4, S: 4, F: 4, H: 4, P: 5, '1': 4, '2': 4, '3': 4, '4': 4, '5': 4 };
   const HAND_ORDER = 'DNASFHP12345E';
@@ -1036,6 +1053,8 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   let actN = 0, lastAct = null, busy = false, guestErr = null;
   let partnerHere = false, full = false, pendEnd = 0, lookStart = 0, lastViewObj = null;
   let defusePos = 0, modalKey = '', screenKey = '', clockEnd = 0, closedBy = '';
+  let outbox = [], chatSeq = 0, chatSeen = 0, chatToasted = 0;
+  const QUICK = ['😹', '😾', 'Nice one', 'Hurry up!', 'Good game'];
 
   // ---------- networking ----------
   function newCode() {
@@ -1049,14 +1068,39 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     try { room.presence(obj).catch(() => { }); } catch (e) { }
   }
   function hostPublish() {
-    const view = G ? Engine.viewFor(G, 1, Date.now()) : { ph: 'lobby' };
+    const view = G ? fullView(1) : { ph: 'lobby' };
     if (G && guestErr) view.err = guestErr;
     presence({ g: code, role: 'host', cid, name: myName || 'Player 1', gcid: G ? G.guestCid : null, view, act: null, closed: null });
   }
   function guestPublish() {
-    presence({ g: code, role: 'guest', cid, name: myName || 'Player 2', act: lastAct, view: null, gcid: null });
+    presence({ g: code, role: 'guest', cid, name: myName || 'Player 2', act: lastAct, chat: outbox.length ? outbox.slice(-5) : null, view: null, gcid: null });
+  }
+  function fullView(seat) {
+    const v = Engine.viewFor(G, seat, Date.now());
+    v.chat = (G.chat || []).slice(-12);
+    v.chatAck = G.chatN || 0;
+    return v;
+  }
+  function addChat(seat, text) {
+    if (!text) return;
+    G.chatId = (G.chatId || 0) + 1;
+    G.chat = (G.chat || []).concat([[seat, text, G.chatId]]).slice(-30);
+  }
+  function rematch() {
+    const old = G;
+    G = Engine.newGame(G.names, Math.random, G);
+    G.chat = old.chat; G.chatN = old.chatN; G.chatId = old.chatId;
   }
   function setView(nv) {
+    const lastId = (nv.chat || []).reduce((m, c) => Math.max(m, c[2]), 0);
+    if (!V) { chatSeen = Math.max(chatSeen, lastId); chatToasted = Math.max(chatToasted, lastId); }
+    else {
+      const fresh = (nv.chat || []).filter((c) => c[2] > chatToasted && c[0] !== nv.you);
+      chatToasted = Math.max(chatToasted, lastId);
+      if (local && local.k === 'chat') chatSeen = lastId;
+      else if (fresh.length) { const c = fresh[fresh.length - 1]; toast(`${clean(nv.names[c[0]])}: ${c[1]}`); }
+    }
+    if (typeof nv.chatAck === 'number') outbox = outbox.filter((m) => m.n > nv.chatAck);
     if (!V || V.gid !== nv.gid) { seenPeek = nv.peek ? (V ? 0 : nv.peek.id) : 0; sel = []; }
     V = nv;
     pendEnd = V.pend ? Date.now() + V.pend.rem : 0;
@@ -1068,7 +1112,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (mode !== 'host') return;
     if (G) store.set('bw-host', { code, G, t: Date.now() });
     hostPublish();
-    if (G) { setView(Engine.viewFor(G, 0, Date.now())); screen = 'table'; }
+    if (G) { setView(fullView(0)); screen = 'table'; }
     render();
   }
   function hostOnPeers() {
@@ -1086,11 +1130,17 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (gp) {
       const nm = clean(gp.presence.name) || G.names[1];
       if (nm !== G.names[1]) { G.names[1] = nm; changed = true; }
+      const ch = gp.presence.chat;
+      if (Array.isArray(ch)) {
+        for (const m of ch.slice().sort((x, y) => (x && y ? x.n - y.n : 0))) {
+          if (m && typeof m.n === 'number' && m.n > (G.chatN || 0)) { G.chatN = m.n; addChat(1, cleanText(m.text)); changed = true; }
+        }
+      }
       const a = gp.presence.act;
       if (a && typeof a === 'object' && typeof a.n === 'number' && a.n > G.lastN) {
         G.lastN = a.n;
         guestErr = null;
-        if (a.t === 'again') { if (G.ph === 'over') G = Engine.newGame(G.names, Math.random, G); }
+        if (a.t === 'again') { if (G.ph === 'over') rematch(); }
         else { const r = Engine.dispatch(G, 1, a, Date.now()); if (r.err) guestErr = { n: a.n, msg: r.err }; }
         changed = true;
       }
@@ -1119,7 +1169,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   }
   function doAct(a) {
     if (mode === 'host') {
-      if (a.t === 'again') { if (G && G.ph === 'over') G = Engine.newGame(G.names, Math.random, G); }
+      if (a.t === 'again') { if (G && G.ph === 'over') rematch(); }
       else { const r = Engine.dispatch(G, 0, a, Date.now()); if (r.err) toast(r.err); }
       sel = []; local = null;
       commit();
@@ -1220,6 +1270,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     renderTop();
     renderScreen();
     renderModal();
+    updateChatList();
     tickCountdown();
   }
   function renderTop() {
@@ -1295,6 +1346,28 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     </section>`;
   }
 
+  const cleanText = (s) => Array.from(String(s || '')).filter((ch) => !BAD(ch.codePointAt(0))).join('').replace(/\s+/g, ' ').trim().slice(0, 120);
+  function sendChat(raw) {
+    const text = cleanText(raw);
+    if (!text || !mode) return false;
+    if (mode === 'host') { if (!G) return false; addChat(0, text); commit(); }
+    else { chatSeq = Math.max(chatSeq + 1, Date.now()); outbox.push({ n: chatSeq, text }); outbox = outbox.slice(-5); guestPublish(); }
+    if (V) chatSeen = Math.max(chatSeen, (V.chat || []).reduce((m, c) => Math.max(m, c[2]), 0));
+    return true;
+  }
+  function chatBtnHTML(v) {
+    const unread = (v.chat || []).filter((c) => c[2] > chatSeen && c[0] !== v.you).length;
+    return `<button class="chatbtn" data-act="chat" aria-label="Chat${unread ? ', ' + unread + ' unread' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg><span>Chat</span>${unread ? `<i class="unread">${unread}</i>` : ''}</button>`;
+  }
+  function updateChatList() {
+    const el = document.getElementById('chatlist');
+    if (!el || !V) return;
+    const msgs = (V.chat || []).map((c) => `<li class="${c[0] === V.you ? 'me' : ''}"><b>${c[0] === V.you ? 'You' : esc(V.names[c[0]])}</b><span>${esc(c[1])}</span></li>`);
+    for (const m of outbox) msgs.push(`<li class="me pending"><b>You</b><span>${esc(m.text)}</span></li>`);
+    const html = msgs.join('') || '<li class="none">No messages yet. Say hi.</li>';
+    if (el.innerHTML !== html) { el.innerHTML = html; el.scrollTop = el.scrollHeight; }
+    chatSeen = Math.max(chatSeen, (V.chat || []).reduce((m, c) => Math.max(m, c[2]), 0));
+  }
   function clockHTML(v) {
     if (v.dl == null) return '';
     const act = v.ph === 'play' ? v.turn : v.need;
@@ -1320,7 +1393,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
         <div class="played">${cards}${nopeStack}</div>
         <p class="st-title">${who(v, p.by)} played ${playLabel(p.kind, p.cards)}${p.kind === 'triple' ? ` and asked for ${NAMES[p.named]}` : ''}</p>
         <p class="st-sub">${state}</p>
-        <div class="cd"><i id="cdbar"></i></div>
+        <div class="cdrow"><div class="cd"><i id="cdbar"></i></div><b id="cdsec">${Math.ceil(p.rem / 1000)}s</b></div>
       </div>`;
     }
     let t = '', s = '';
@@ -1370,7 +1443,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
         <div class="status">${statusHTML(v)}</div>
         <div class="pile">${top ? cardSVG(top, 'pc') : '<div class="slot"></div>'}<span class="cnt">${v.disc.length}</span><span class="lbl">Discard</span></div>
       </div>
-      <button class="log" data-act="log" aria-label="Show game log"><ol>${logs}</ol></button>
+      <div class="logrow"><button class="log" data-act="log" aria-label="Show game log"><ol>${logs}</ol></button>${chatBtnHTML(v)}</div>
       <div class="mine ${v.turn === me && v.ph !== 'over' ? 'active' : ''}">
         <div class="hand" id="hand">${hand}</div>
       </div>
@@ -1474,6 +1547,13 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       const grid = ORDER.split('').map((c) => `<button class="pickcard" data-act="name" data-t="${c}">${cardSVG(c)}</button>`).join('');
       return { key: 'triple', html: sheet('Name a card', `<h2>Name a card</h2><p class="sub">If ${oname} has it, you take it.</p><div class="grid">${grid}</div><div class="btns one"><button class="btn ghost ink" data-act="close">Cancel</button></div>`) };
     }
+    if (local && local.k === 'chat') {
+      const quick = QUICK.map((q) => `<button type="button" class="chipbtn" data-act="quick" data-q="${esc(q)}">${esc(q)}</button>`).join('');
+      return { key: 'chat', html: sheet('Chat', `<div class="chathead"><h2>Chat</h2><button class="btn ghost ink small" data-act="close">Close</button></div>
+        <ol class="chatlist" id="chatlist"></ol>
+        <div class="quick">${quick}</div>
+        <form class="chatform" id="chatform"><input id="chatin" maxlength="120" autocomplete="off" enterkeyhint="send" placeholder="Say something…" aria-label="Message"><button class="btn hot small" type="submit">Send</button></form>`, 'chatsheet') };
+    }
     if (local && local.k === 'log') {
       const items = (v.log || []).map((e) => `<li>${logLine(v, e)}</li>`).reverse().join('');
       return { key: 'log:' + (v.log || []).length + ':' + JSON.stringify(v.log && v.log[v.log.length - 1]), html: sheet('Game log', `<h2>What happened</h2><ol class="fulllog">${items || '<li>Nothing yet.</li>'}</ol><div class="btns one"><button class="btn ghost ink" data-act="close">Close</button></div>`) };
@@ -1491,7 +1571,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     const row = (t) => `<li>${cardSVG(t, 'tiny')}<div><b>${NAMES[t]}</b> <span class="role">${role(t)}</span><br>${desc(t)}</div></li>`;
     return sheet('How to play', `<h2>How to play</h2>
       <p class="sub">Don’t explode. If you draw the Kaboom Cat and have no Tuna Time, you lose.</p>
-      <ol class="steps"><li>On your turn, play as many cards as you like, or none.</li><li>Then draw one card. That ends your turn.</li><li>When anyone plays a card, the other player has a few seconds to Nope it.</li></ol>
+      <ol class="steps"><li>On your turn, play as many cards as you like, or none.</li><li>Then draw one card. That ends your turn.</li><li>When anyone plays a card, the other player has 30 seconds to Nope it, or can tap “Let it happen” to skip the wait.</li></ol>
       <p class="sub">Each player starts with 1 Tuna Time and 7 random cards. One Kaboom Cat and two Tuna Time are shuffled into the draw pile.</p>
       <ul class="rules">${['E', 'D', 'N', 'A', 'S', 'F', 'H', 'P'].map(row).join('')}
       <li>${cardSVG('1', 'tiny')}<div><b>Combos</b> <span class="role">any matching cards</span><br>2 matching cards: steal a random card. 3 matching: name a card and take it if they have it. 5 different cards: take any card from the discard pile. Kaboom Cat and Tuna Time can’t be used in combos.</div></li></ul>
@@ -1517,6 +1597,8 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (!b) return;
     const rem = Math.max(0, pendEnd - Date.now());
     b.style.width = (100 * rem / WIN).toFixed(1) + '%';
+    const sec = document.getElementById('cdsec');
+    if (sec) sec.textContent = Math.ceil(rem / 1000) + 's';
   }
   let toastT = 0;
   function toast(msg) {
@@ -1532,6 +1614,12 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (e.target.id === 'name') { myName = clean(e.target.value); store.set('bw-name', myName); e.target.classList.remove('missing'); }
     if (e.target.id === 'code') e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (e.target.id === 'dpos') { defusePos = Number(e.target.value); const l = $('#dposl'); if (l && V) l.textContent = posLabel(defusePos, V.dk); }
+  });
+  document.addEventListener('submit', (e) => {
+    if (e.target.id !== 'chatform') return;
+    e.preventDefault();
+    const inp = $('#chatin');
+    if (sendChat(inp.value)) { inp.value = ''; inp.focus(); }
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.id === 'code') { e.preventDefault(); const b = $('[data-act="join"]'); if (b) b.click(); }
@@ -1608,6 +1696,8 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       case 'pickd': doAct({ t: 'pick', card: t }); break;
       case 'seen': if (V && V.peek) seenPeek = V.peek.id; render(); break;
       case 'again': doAct({ t: 'again' }); break;
+      case 'chat': local = { k: 'chat' }; if (V) chatSeen = (V.chat || []).reduce((m, c) => Math.max(m, c[2]), 0); render(); setTimeout(() => { const i = $('#chatin'); if (i && window.matchMedia('(pointer: fine)').matches) i.focus(); }, 50); break;
+      case 'quick': sendChat(b.dataset.q); break;
     }
   });
 
