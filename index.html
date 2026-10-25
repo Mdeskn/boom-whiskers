@@ -1,0 +1,1563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Boom Whiskers: a two-phone cat card game. Dodge the Kaboom Cat.">
+<meta name="theme-color" content="#1b1533">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23ff4b2b'/%3E%3Cg fill='%23fff4dc'%3E%3Cellipse cx='32' cy='40' rx='11' ry='9'/%3E%3Ccircle cx='19' cy='27' r='5'/%3E%3Ccircle cx='28' cy='20' r='5'/%3E%3Ccircle cx='38' cy='20' r='5'/%3E%3Ccircle cx='46' cy='28' r='5'/%3E%3C/g%3E%3C/svg%3E">
+<title>Boom Whiskers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Bricolage+Grotesque:opsz,wght@12..96,400;600;800&display=swap">
+<style>
+/* Layout: a one-screen card table. Opponent across the top, piles in the middle, your hand and buttons docked at the bottom. */
+:root {
+  --felt: #1b1533;
+  --felt-2: #2a2150;
+  --rail: #3b3170;
+  --deep: #0d0a1a;
+  --ink: #1f1a30;
+  --paper: #fff4dc;
+  --muted: #b9b0dc;
+  --tomato: #ff4b2b;
+  --mustard: #ffc23c;
+  --mint: #5fe0b4;
+  --pink: #ff6fa5;
+  --display: 'Bowlby One', 'Arial Black', Impact, sans-serif;
+  --body: 'Bricolage Grotesque', ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  --cw: clamp(84px, 27vw, 124px);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--felt);
+  background-image:
+    radial-gradient(circle at 50% 38%, var(--felt-2) 0, var(--felt) 72%),
+    radial-gradient(var(--rail) 1px, transparent 1.5px);
+  background-blend-mode: normal;
+  color: var(--paper);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+button { font: inherit; color: inherit; }
+#app {
+  height: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px;
+}
+.top { display: flex; align-items: center; gap: 10px; }
+.brand { font-family: var(--display); font-size: 16px; letter-spacing: .02em; color: var(--mustard); }
+.chip {
+  margin-left: auto; font-size: 12px; font-weight: 600; letter-spacing: .03em;
+  padding: 4px 10px; border-radius: 99px; background: var(--rail); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%;
+}
+.chip.good { background: #1f4d43; color: var(--mint); }
+.chip.warn { background: #4d3b14; color: var(--mustard); }
+.chip.bad { background: #5a1d1d; color: #ffb4a6; }
+.iconbtn {
+  border: 2px solid var(--rail); background: transparent; border-radius: 99px;
+  font-weight: 800; font-size: 13px; padding: 4px 10px; cursor: pointer; color: var(--paper);
+}
+#screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* Buttons */
+.btn {
+  font-family: var(--display); font-size: 16px; letter-spacing: .02em; line-height: 1.1;
+  color: var(--ink); background: var(--mustard);
+  border: 3px solid var(--ink); border-radius: 14px; padding: 12px 12px; min-height: 52px;
+  box-shadow: 0 4px 0 var(--deep); cursor: pointer;
+  transition: transform .06s, box-shadow .06s;
+}
+.btn:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 var(--deep); }
+.btn.hot { background: var(--tomato); color: var(--paper); }
+.btn.nope { background: var(--pink); }
+.btn.nope small { font-family: var(--body); font-weight: 800; font-size: 12px; background: var(--ink); color: var(--paper); border-radius: 99px; padding: 1px 7px; vertical-align: 2px; }
+.btn.ghost { background: transparent; color: var(--paper); border-color: var(--rail); box-shadow: none; }
+.btn.ghost.ink { color: var(--ink); border-color: var(--ink); }
+.btn.small { min-height: 40px; font-size: 14px; padding: 8px 14px; }
+.btn.big { min-height: 58px; font-size: 19px; }
+.btn[disabled] { opacity: .42; cursor: default; box-shadow: none; }
+.link { background: none; border: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 10px; font-weight: 600; }
+:focus-visible { outline: 3px solid var(--mint); outline-offset: 2px; }
+
+/* Lobby */
+.lobby, .wait { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; padding-top: 4px; overflow-y: auto; }
+.hero { position: relative; width: 240px; height: 170px; margin: 6px 0 -4px; }
+.hero .card { position: absolute; width: 104px; top: 14px; left: 68px; filter: drop-shadow(0 8px 0 rgba(0,0,0,.35)); }
+.hero .h1 { transform: translateX(-62px) rotate(-14deg); }
+.hero .h3 { transform: translateX(62px) rotate(14deg); }
+.hero .h2 { transform: translateY(-14px); z-index: 2; animation: bob 2.8s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(-20px) rotate(-2deg); } }
+h1 { font-family: var(--display); font-weight: 400; font-size: clamp(34px, 10vw, 48px); line-height: .95; margin: 0; color: var(--paper); text-wrap: balance; text-shadow: 0 4px 0 var(--deep); }
+.lede { margin: 0; color: var(--muted); max-width: 34ch; text-wrap: balance; }
+.form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 10px; text-align: left; margin-top: 6px; }
+.form label { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+input#name, input#code {
+  width: 100%; font: inherit; font-size: 17px; font-weight: 600; color: var(--ink); background: var(--paper);
+  border: 3px solid var(--ink); border-radius: 12px; padding: 12px 14px; min-height: 52px;
+}
+input#code { font-family: var(--display); letter-spacing: .25em; text-transform: uppercase; text-align: center; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 4px 0; }
+.or::before, .or::after { content: ""; flex: 1; height: 2px; background: var(--rail); }
+.joinrow { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+.joinrow .btn { padding-inline: 22px; }
+.warn { background: #4d1f1a; color: #ffd2c9; border-radius: 12px; padding: 10px 14px; margin: 0; max-width: 360px; font-size: 14px; }
+.fine { color: var(--muted); font-size: 13px; margin: 0; }
+.eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 0; }
+.eyebrow.ink { color: #6d6488; margin-top: 10px; }
+.bigcode { font-family: var(--display); font-size: clamp(54px, 18vw, 76px); letter-spacing: .12em; color: var(--mustard); text-shadow: 0 5px 0 var(--deep); line-height: 1; padding-left: .12em; }
+.paws { display: flex; gap: 12px; margin: 10px 0; }
+.paws i { width: 16px; height: 16px; border-radius: 50%; background: var(--mustard); animation: paw 1.2s ease-in-out infinite; }
+.paws i:nth-child(2) { animation-delay: .2s; } .paws i:nth-child(3) { animation-delay: .4s; }
+@keyframes paw { 0%, 100% { transform: translateY(0); opacity: .35; } 40% { transform: translateY(-8px); opacity: 1; } }
+
+/* Table */
+.card { display: block; width: 100%; height: auto; aspect-ratio: 200 / 280; }
+.table { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.opp { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 16px; background: rgba(13,10,26,.35); border: 2px solid transparent; }
+.opp.active, .mine.active { border-color: var(--mustard); }
+.who { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.nm { font-family: var(--display); font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 9em; }
+.pill { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; background: var(--rail); color: var(--muted); padding: 2px 8px; border-radius: 99px; }
+.pill.turn { background: var(--mustard); color: var(--ink); }
+.fan { flex: 1; display: flex; justify-content: center; padding-left: 22px; height: 64px; align-items: center; min-width: 0; overflow: hidden; }
+.ob { width: 42px; margin-left: -24px; transform: rotate(var(--r)); transform-origin: 50% 120%; filter: drop-shadow(0 3px 0 rgba(0,0,0,.3)); }
+.mid { display: grid; grid-template-columns: 76px 1fr 76px; gap: 10px; align-items: center; }
+.pile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pile .pc { width: 76px; filter: drop-shadow(0 4px 0 rgba(0,0,0,.35)); }
+.deckstack { position: relative; width: 76px; }
+.deckstack .under { position: absolute; inset: 0; transform: translate(4px, 4px) rotate(3deg); z-index: -1; }
+.slot { width: 76px; aspect-ratio: 200/280; border: 3px dashed var(--rail); border-radius: 10px; }
+.cnt { position: absolute; top: -8px; right: -8px; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 99px; display: grid; place-items: center; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
+.lbl { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.status { min-width: 0; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.st-title { margin: 0; font-family: var(--display); font-size: 17px; line-height: 1.15; text-wrap: balance; }
+.st-title.me { color: var(--mustard); }
+.st-sub { margin: 0; font-size: 13px; color: var(--muted); text-wrap: balance; }
+.pend { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; animation: pop .25s ease-out; }
+.played { position: relative; display: flex; justify-content: center; }
+.played .mini { width: 44px; margin: 0 -6px; filter: drop-shadow(0 3px 0 rgba(0,0,0,.3)); }
+.nopes { position: absolute; right: -14px; top: 10px; display: flex; }
+.nopes .mini { width: 40px; margin-left: -28px; transform: rotate(16deg); }
+.cd { width: 100%; max-width: 160px; height: 7px; border-radius: 9px; background: var(--rail); overflow: hidden; }
+.cd i { display: block; height: 100%; width: 100%; background: var(--mustard); border-radius: 9px; }
+@keyframes pop { from { transform: scale(.85); opacity: .3; } to { transform: none; opacity: 1; } }
+.log { all: unset; cursor: pointer; display: block; min-height: 3.6em; padding: 6px 10px; border-radius: 12px; background: rgba(13,10,26,.35); }
+.log ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; font-size: 13px; color: var(--muted); }
+.log li:last-child { color: var(--paper); font-weight: 600; }
+.mine { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; border-radius: 16px; border: 2px solid transparent; background: rgba(13,10,26,.35); }
+.hand { display: flex; align-items: flex-end; overflow-x: auto; overflow-y: hidden; padding: 26px 12px 12px 10px; scrollbar-width: thin; }
+.stack { position: relative; flex: 0 0 auto; width: var(--cw); padding: 0; border: 0; background: none; cursor: pointer; transition: transform .14s ease; }
+.stack + .stack { margin-left: calc(var(--cw) * -0.34); }
+.stack .card { position: relative; filter: drop-shadow(0 4px 0 rgba(0,0,0,.4)); }
+.stack .shadow { position: absolute; inset: 0; transform: translate(5px, -5px) rotate(4deg); filter: brightness(.7); }
+.stack.sel { transform: translateY(-18px); }
+.stack.sel .card:not(.shadow) { filter: drop-shadow(0 0 0 var(--mustard)) drop-shadow(0 6px 0 var(--mustard)); }
+.badge { position: absolute; top: -6px; left: -4px; background: var(--ink); color: var(--paper); border: 2px solid var(--paper); font-weight: 800; font-size: 12px; border-radius: 99px; padding: 0 7px; line-height: 20px; }
+.pick { position: absolute; top: -10px; right: -6px; width: 28px; height: 28px; border-radius: 50%; background: var(--mustard); color: var(--ink); border: 3px solid var(--ink); display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+.empty { color: var(--muted); margin: 0 auto 30px; }
+.bar { display: flex; flex-direction: column; gap: 8px; }
+.info { margin: 0; font-size: 13px; min-height: 3.2em; color: var(--paper); }
+.info.dim { color: var(--muted); }
+.role { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; background: var(--rail); color: var(--muted); padding: 1px 7px; border-radius: 99px; margin-right: 2px; }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btns.one { grid-template-columns: 1fr; }
+.waitline { grid-column: 1 / -1; margin: 0; min-height: 52px; display: grid; place-items: center; color: var(--muted); font-weight: 600; text-align: center; border: 2px dashed var(--rail); border-radius: 14px; padding: 6px 12px; }
+
+/* Modal sheets */
+#modal { position: fixed; inset: 0; z-index: 20; background: rgba(9, 7, 18, .74); display: flex; align-items: flex-end; justify-content: center; padding: 12px max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+.sheet { width: 100%; max-width: 460px; max-height: 100%; overflow-y: auto; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 22px; padding: 18px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 0 var(--deep); animation: rise .22s ease-out; }
+@keyframes rise { from { transform: translateY(30px); opacity: 0; } }
+.sheet h2 { font-family: var(--display); font-weight: 400; font-size: 26px; margin: 0; line-height: 1.05; text-wrap: balance; }
+.sheet .sub { margin: 0; color: #4b4366; }
+.sheet .dim { color: #6d6488; }
+.sheet .btn { box-shadow: 0 4px 0 #b7a98a; }
+.sheet .chipbtn { border: 2px solid var(--ink); background: #fff; border-radius: 99px; padding: 8px 14px; font-weight: 800; cursor: pointer; color: var(--ink); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row .mini { width: 44px; }
+.row.three { justify-content: center; gap: 10px; flex-wrap: nowrap; }
+.row figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.row figcaption { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #6d6488; }
+.card.mid { width: clamp(72px, 24vw, 108px); }
+.duo { display: flex; justify-content: center; gap: 0; }
+.duo .card { width: 96px; filter: drop-shadow(0 4px 0 rgba(0,0,0,.25)); }
+.duo .card:first-child { transform: rotate(-8deg); }
+.duo .card:last-child { transform: rotate(8deg) translateX(-10px); }
+.slab { font-weight: 600; }
+#dpos { width: 100%; accent-color: var(--tomato); height: 32px; }
+.quick { display: flex; gap: 8px; flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; }
+.pickcard { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 12px; }
+.pickcard:active { transform: scale(.96); }
+.over { text-align: center; align-items: center; }
+.boom { position: relative; width: 150px; margin: 4px auto 6px; }
+.boom .bigcard { width: 120px; margin: 0 auto; transform: rotate(-6deg); }
+.boom.lost { animation: shake .5s ease-in-out 2; }
+.burst { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%) rotate(-10deg); font-family: var(--display); font-size: 42px; color: var(--mustard); -webkit-text-stroke: 3px var(--ink); paint-order: stroke; text-shadow: 0 4px 0 var(--ink); animation: pop .4s ease-out; }
+.boom.won .burst { color: var(--mint); }
+@keyframes shake { 20% { transform: translateX(-8px) rotate(-3deg); } 40% { transform: translateX(8px) rotate(3deg); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.rules li { display: grid; grid-template-columns: 46px 1fr; gap: 10px; align-items: start; font-size: 14px; }
+.rules .tiny { width: 46px; }
+.rules .role { background: #e9dfc6; color: #4b4366; }
+.fulllog { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.fulllog li:first-child { font-weight: 800; }
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(150px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 14px; padding: 10px 14px; font-weight: 600; max-width: min(92vw, 420px); text-align: center; box-shadow: 0 4px 0 var(--deep); }
+@media (max-height: 640px) {
+  :root { --cw: clamp(64px, 18vw, 88px); }
+  .hero { display: none; }
+  .fan { height: 50px; } .ob { width: 34px; }
+  .mid { grid-template-columns: 62px 1fr 62px; } .pile .pc, .deckstack, .slot { width: 62px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <span class="brand">Boom Whiskers</span>
+    <span id="chip" class="chip">Connecting</span>
+    <button class="iconbtn" data-act="rules" aria-label="How to play">Rules</button>
+  </header>
+  <main id="screen"></main>
+</div>
+<div id="modal" hidden></div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>// Phone-to-phone connection over PeerJS, shaped like the small "room" API the game uses:
+// presence(obj) shares your state, peers() lists everyone, onPeers/onConnection notify changes.
+(function () {
+  window.BW_STANDALONE = true;
+  window.BW_ROOM = function () {
+    if (typeof window.Peer !== 'function') return null;
+    const PREFIX = 'boomwhiskers-v1-';
+    let mine = {}, peer = null, myRole = null, myCode = null, online = true, retryT = 0;
+    const conns = new Map();
+    const peerHandlers = [], connHandlers = [], issueHandlers = [];
+
+    function peers() {
+      const list = [{ peer: 'me', isMe: true, sameTab: true, presence: mine }];
+      for (const r of conns.values()) if (r.presence && r.conn.open) list.push({ peer: r.conn.peer, isMe: false, sameTab: false, presence: r.presence });
+      return list;
+    }
+    const emitPeers = () => { const ps = peers(); setTimeout(() => peerHandlers.forEach((h) => h({ peers: ps })), 0); };
+    const setOnline = (v) => { if (v !== online) { online = v; connHandlers.forEach((h) => h(v)); } };
+    const issue = (type) => issueHandlers.forEach((h) => h(type));
+    function send(r) { if (r.conn.open) { try { r.conn.send({ t: 'p', p: mine }); } catch (e) { } } }
+
+    function wire(conn) {
+      const r = { conn, presence: null };
+      conns.set(conn.peer, r);
+      conn.on('open', () => { send(r); emitPeers(); });
+      conn.on('data', (d) => {
+        if (d && d.t === 'p' && d.p && typeof d.p === 'object' && !Array.isArray(d.p)) { r.presence = d.p; emitPeers(); }
+      });
+      conn.on('close', () => {
+        if (conns.get(conn.peer) === r) conns.delete(conn.peer);
+        emitPeers();
+        if (myRole === 'guest') scheduleRetry(1500);
+      });
+      conn.on('error', () => { });
+      conn.on('iceStateChanged', (s) => { if (s === 'failed') issue('ice-failed'); });
+    }
+    function connectHost() {
+      if (!peer || peer.destroyed || myRole !== 'guest' || !peer.open) return;
+      for (const [k, r] of conns) { if (r.conn.open) return; try { r.conn.close(); } catch (e) { } conns.delete(k); }
+      wire(peer.connect(PREFIX + myCode.toLowerCase(), { reliable: true, serialization: 'json' }));
+      scheduleRetry(6000); // if it never opens, try again
+    }
+    function scheduleRetry(ms) { clearTimeout(retryT); retryT = setTimeout(connectHost, ms); }
+    function teardown() {
+      clearTimeout(retryT);
+      for (const r of conns.values()) { try { r.conn.close(); } catch (e) { } }
+      conns.clear();
+      if (peer) { try { peer.destroy(); } catch (e) { } }
+      peer = null; myRole = null; myCode = null;
+      setOnline(true);
+      emitPeers();
+    }
+    function ensure() {
+      const role = mine.role, code = mine.g;
+      if (!role || !code) { if (peer) teardown(); return; }
+      if (peer && role === myRole && code === myCode) return;
+      teardown();
+      myRole = role; myCode = code;
+      const opts = Object.assign({
+        debug: 0,
+        config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] }
+      }, window.BW_PEER_OPTS || {});
+      const p = role === 'host' ? new window.Peer(PREFIX + code.toLowerCase(), opts) : new window.Peer(opts);
+      peer = p;
+      setOnline(false);
+      p.on('open', () => { if (p !== peer) return; setOnline(true); if (role === 'guest') connectHost(); });
+      p.on('connection', (conn) => { if (p !== peer || myRole !== 'host') { try { conn.close(); } catch (e) { } return; } wire(conn); });
+      p.on('disconnected', () => { if (p !== peer || p.destroyed) return; setOnline(false); setTimeout(() => { try { if (!p.destroyed) p.reconnect(); } catch (e) { } }, 1500); });
+      p.on('error', (err) => {
+        if (p !== peer) return;
+        const t = err && err.type;
+        if (t === 'peer-unavailable') { scheduleRetry(2500); return; }
+        if (t === 'unavailable-id') { issue('code-taken'); return; }
+        if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') { setOnline(false); issue('server'); setTimeout(() => { try { if (p === peer && !p.destroyed) p.reconnect(); } catch (e) { } }, 3000); return; }
+        if (t === 'browser-incompatible') { issue('browser'); return; }
+      });
+    }
+
+    return {
+      presence(patch) {
+        const n = Object.assign({}, mine);
+        for (const k in patch) { if (patch[k] === null || patch[k] === undefined) delete n[k]; else n[k] = patch[k]; }
+        mine = n;
+        ensure();
+        for (const r of conns.values()) send(r);
+        return Promise.resolve();
+      },
+      peers,
+      onPeers(h) { peerHandlers.push(h); return () => { }; },
+      onConnection(h) { connHandlers.push(h); setTimeout(() => h(online), 0); return () => { }; },
+      onIssue(h) { issueHandlers.push(h); },
+      connected() { return online; }
+    };
+  };
+})();
+</script>
+<script>// Boom Whiskers card art. Original cat illustrations drawn as SVG.
+(function (root) {
+  const I = '#1f1a30';
+  const DISPLAY = "'Bowlby One', 'Arial Black', Impact, sans-serif";
+  const ST = (w) => `stroke="${I}" stroke-width="${w == null ? 4 : w}" stroke-linecap="round" stroke-linejoin="round"`;
+  const f1 = (n) => (Math.round(n * 10) / 10).toString();
+
+  function star(cx, cy, r, n, fill, w, inner) {
+    const pts = [];
+    for (let i = 0; i < n * 2; i++) {
+      const a = Math.PI * i / n - Math.PI / 2;
+      const rr = i % 2 ? r * (inner || 0.45) : r;
+      pts.push(f1(cx + Math.cos(a) * rr) + ',' + f1(cy + Math.sin(a) * rr));
+    }
+    return `<polygon points="${pts.join(' ')}" fill="${fill}" ${w ? ST(w) : ''}/>`;
+  }
+  function sparkle(cx, cy, r, fill) {
+    const k = r * 0.2;
+    return `<path d="M${cx},${cy - r} Q${cx + k},${cy - k} ${cx + r},${cy} Q${cx + k},${cy + k} ${cx},${cy + r} Q${cx - k},${cy + k} ${cx - r},${cy} Q${cx - k},${cy - k} ${cx},${cy - r} Z" fill="${fill}"/>`;
+  }
+  function heart(cx, cy, s, fill, w) {
+    return `<path transform="translate(${cx} ${cy}) scale(${s})" d="M0,7 C-13,-2 -11,-12 -5,-12 C-2,-12 0,-10 0,-8 C0,-10 2,-12 5,-12 C11,-12 13,-2 0,7 Z" fill="${fill}" ${w ? ST(w / s) : ''}/>`;
+  }
+  function rays(cx, cy, n, r, c1, c2) {
+    let s = '';
+    for (let i = 0; i < n; i++) {
+      const a1 = 2 * Math.PI * i / n, a2 = 2 * Math.PI * (i + 1) / n;
+      s += `<path d="M${cx},${cy} L${f1(cx + Math.cos(a1) * r)},${f1(cy + Math.sin(a1) * r)} L${f1(cx + Math.cos(a2) * r)},${f1(cy + Math.sin(a2) * r)} Z" fill="${i % 2 ? c1 : c2}"/>`;
+    }
+    return s;
+  }
+  function dots(color, op, step) {
+    let s = '';
+    step = step || 14;
+    for (let y = 4; y < 166; y += step) for (let x = (y / step) % 2 ? 4 : 11; x < 172; x += step)
+      s += `<circle cx="${x}" cy="${y}" r="2" fill="${color}" opacity="${op}"/>`;
+    return s;
+  }
+
+  function eye(sx, st, fur) {
+    const cx = sx * 18, cy = -4;
+    switch (st) {
+      case 'happy':
+        return `<path d="M${cx - 9},${cy + 3} Q${cx},${cy - 10} ${cx + 9},${cy + 3}" fill="none" ${ST(4)}/>`;
+      case 'sleep':
+        return `<path d="M${cx - 9},${cy - 1} Q${cx},${cy + 8} ${cx + 9},${cy - 1}" fill="none" ${ST(4)}/>` +
+          `<path d="M${cx + sx * 8},${cy + 3} l${sx * 4},3" fill="none" ${ST(2.5)}/>`;
+      case 'wide':
+        return `<ellipse cx="${cx}" cy="${cy}" rx="11.5" ry="13" fill="#fff" ${ST(3.5)}/><circle cx="${cx}" cy="${cy + 1}" r="3.4" fill="${I}"/>`;
+      case 'big':
+        return `<ellipse cx="${cx}" cy="${cy}" rx="13" ry="15" fill="${I}" ${ST(3)}/>` +
+          `<ellipse cx="${cx}" cy="${cy + 3}" rx="9" ry="10" fill="#5a3d96"/>` +
+          `<circle cx="${cx - 4}" cy="${cy - 6}" r="5" fill="#fff"/><circle cx="${cx + 5}" cy="${cy + 5}" r="2.6" fill="#fff"/>`;
+      case 'fierce':
+        return `<ellipse cx="${cx}" cy="${cy}" rx="9" ry="9.5" fill="#fff35c" ${ST(3)}/>` +
+          `<ellipse cx="${cx}" cy="${cy}" rx="2.6" ry="7.5" fill="${I}"/>` +
+          `<path d="M${cx + sx * 12},${cy - 14} L${cx - sx * 9},${cy - 6}" fill="none" ${ST(5)}/>`;
+      case 'lid':
+        return `<ellipse cx="${cx}" cy="${cy}" rx="9" ry="9.5" fill="#fff" ${ST(3)}/>` +
+          `<ellipse cx="${cx}" cy="${cy + 2}" rx="4.2" ry="6" fill="${I}"/>` +
+          `<path d="M${cx - 9.5},${cy + 0.5} A9.5,10 0 0 1 ${cx + 9.5},${cy + 0.5} Z" fill="${fur}" ${ST(3)}/>`;
+      case 'blue':
+        return `<ellipse cx="${cx}" cy="${cy}" rx="9.5" ry="10.5" fill="#55b8ff" ${ST(3)}/>` +
+          `<ellipse cx="${cx}" cy="${cy}" rx="2.8" ry="8" fill="${I}"/><circle cx="${cx + 3}" cy="${cy - 4}" r="2.2" fill="#fff"/>`;
+      case 'dizzy':
+        return `<circle cx="${cx}" cy="${cy}" r="10" fill="#fff" ${ST(3)}/>` +
+          `<path d="M${cx},${cy} m0,-1.5 a1.5,1.5 0 1 1 -1.5,1.5 a4,4 0 1 1 4,4 a6.5,6.5 0 1 1 -6.5,-6.5" fill="none" ${ST(2.2)}/>`;
+      default:
+        return `<ellipse cx="${cx}" cy="${cy}" rx="8.5" ry="10" fill="#fff" ${ST(3)}/>` +
+          `<ellipse cx="${cx}" cy="${cy + 1}" rx="4.3" ry="7" fill="${I}"/><circle cx="${cx + 2}" cy="${cy - 3}" r="2" fill="#fff"/>`;
+    }
+  }
+
+  function mouth(st) {
+    const nose = `<path d="M-5.5,8 L5.5,8 L0,14 Z" fill="#ff7fa0" ${ST(2.5)}/>`;
+    switch (st) {
+      case 'o':
+        return nose + `<ellipse cx="0" cy="25" rx="7" ry="9" fill="#6b1530" ${ST(3)}/><ellipse cx="0" cy="29" rx="4" ry="3" fill="#ff7fa0"/>`;
+      case 'grin':
+        return nose + `<path d="M-16,18 Q0,21 16,18 Q13,37 0,37 Q-13,37 -16,18 Z" fill="#6b1530" ${ST(3)}/>` +
+          `<ellipse cx="0" cy="31" rx="6.5" ry="4" fill="#ff7fa0"/>` +
+          `<path d="M-12,19.5 L-8.5,27 L-6,20.2 Z M12,19.5 L8.5,27 L6,20.2 Z" fill="#fff" ${ST(1.8)}/>`;
+      case 'flat':
+        return nose + `<path d="M0,14 V18 M-9,21 Q0,17 9,21" fill="none" ${ST(2.8)}/>`;
+      case 'cat3':
+        return nose + `<path d="M0,14 V18 M-12,18 Q-6,26 0,18 Q6,26 12,18" fill="none" ${ST(2.8)}/>`;
+      case 'lick':
+        return nose + `<path d="M3,22 Q10,22 10,29 Q10,35 5,35 Q0,35 0,29 Z" fill="#ff7fa0" ${ST(2.4)}/>` +
+          `<path d="M0,14 V18 M0,18 Q-7,26 -14,20 M0,18 Q7,26 14,20" fill="none" ${ST(2.8)}/>`;
+      default:
+        return nose + `<path d="M0,14 V18 M0,18 Q-7,26 -14,20 M0,18 Q7,26 14,20" fill="none" ${ST(2.8)}/>`;
+    }
+  }
+
+  // Front-facing cat head, centred at 0,0. Spans about x -47..47, y -59..38.
+  function head(o) {
+    o = Object.assign({ fur: '#ff9a3c', dark: '#d9701a', inner: '#ff9db8', eyes: 'open', mouth: 'smile', id: 'h', whisk: I }, o);
+    const hp = 'M-47,-4 C-47,-32 -27,-43 0,-43 C27,-43 47,-32 47,-4 C47,24 28,38 0,38 C-28,38 -47,24 -47,-4 Z';
+    let s = '';
+    for (const sx of [-1, 1]) {
+      const ef = (sx < 0 ? o.earL : o.earR) || o.earFur || o.fur;
+      s += `<path d="M${sx * 44},-14 L${sx * 42},-59 L${sx * 10},-39 Z" fill="${ef}" ${ST(4)}/>`;
+      s += `<path d="M${sx * 37},-24 L${sx * 36},-49 L${sx * 19},-38 Z" fill="${o.inner}"/>`;
+    }
+    s += `<clipPath id="cp-${o.id}"><path d="${hp}"/></clipPath>`;
+    s += `<path d="${hp}" fill="${o.fur}"/>`;
+    let inner = o.patches || '';
+    if (o.stripes) {
+      for (const sx of [-1, 1]) inner += `<path d="M${sx * 48},-2 H${sx * 34} M${sx * 48},8 H${sx * 35} M${sx * 48},-12 H${sx * 36}" stroke="${o.dark}" stroke-width="4.5" stroke-linecap="round" fill="none"/>`;
+      inner += `<path d="M0,-44 V-28 M-13,-43 L-10,-30 M13,-43 L10,-30" stroke="${o.dark}" stroke-width="4.5" stroke-linecap="round" fill="none"/>`;
+    }
+    if (o.muzzle) inner += `<circle cx="-9" cy="19" r="14" fill="${o.muzzle}"/><circle cx="9" cy="19" r="14" fill="${o.muzzle}"/>`;
+    if (o.mask) inner += o.mask;
+    s += `<g clip-path="url(#cp-${o.id})">${inner}</g>`;
+    s += `<path d="${hp}" fill="none" ${ST(4)}/>`;
+    if (o.blush) s += `<ellipse cx="-31" cy="13" rx="8" ry="5" fill="#ff5f8f" opacity=".5"/><ellipse cx="31" cy="13" rx="8" ry="5" fill="#ff5f8f" opacity=".5"/>`;
+    s += eye(-1, o.eyes, o.fur) + eye(1, o.eyes, o.fur);
+    s += mouth(o.mouth);
+    s += `<path d="M-27,15 L-64,8 M-27,21 L-62,25 M27,15 L64,8 M27,21 L62,25" fill="none" stroke="${o.whisk}" stroke-width="2.4" stroke-linecap="round"/>`;
+    if (o.extra) s += o.extra;
+    return `<g>${s}</g>`;
+  }
+  const at = (x, y, sc, inner, rot) => `<g transform="translate(${x} ${y})${rot ? ` rotate(${rot})` : ''}${sc && sc !== 1 ? ` scale(${sc})` : ''}">${inner}</g>`;
+
+  function paw(fur, o) {
+    o = o || {};
+    let s = '';
+    if (o.arm) s += `<rect x="-15" y="4" width="30" height="${o.arm}" rx="13" fill="${fur}" ${ST(4)}/>`;
+    s += `<ellipse cx="0" cy="0" rx="25" ry="${o.ry || 28}" fill="${fur}" ${ST(4)}/>`;
+    if (o.pads !== false) {
+      s += `<path d="M-11,13 Q-11,2 0,2 Q11,2 11,13 Q11,20 0,19 Q-11,20 -11,13 Z" fill="#ff9db8" ${ST(2.5)}/>`;
+      s += `<ellipse cx="-14" cy="-8" rx="5" ry="6.5" fill="#ff9db8" ${ST(2.5)}/><ellipse cx="0" cy="-14" rx="5.2" ry="6.8" fill="#ff9db8" ${ST(2.5)}/><ellipse cx="14" cy="-8" rx="5" ry="6.5" fill="#ff9db8" ${ST(2.5)}/>`;
+    }
+    return s;
+  }
+
+  const FUR = {
+    ginger: '#ff9a3c', gingerD: '#d4661a', grey: '#a6aec4', greyD: '#737c97', black: '#423b66', blackD: '#2c2748',
+    cream: '#fff3dd', blue: '#8e9bc2', blueD: '#66729a', siam: '#f6e6cc', point: '#8a6150'
+  };
+
+  const ART = {
+    E: {
+      name: 'Kaboom Cat', tag: 'BOOM!', face: '#ff4b2b',
+      art() {
+        let s = `<rect width="168" height="162" fill="#ffd24a"/>` + rays(84, 96, 18, 220, '#ffb21e', '#ffd24a');
+        const pts = [];
+        const N = 20;
+        for (let i = 0; i < N * 2; i++) {
+          const a = Math.PI * i / N;
+          const r = i % 2 ? 52 : 63;
+          pts.push(f1(84 + Math.cos(a) * r) + ',' + f1(104 + Math.sin(a) * r * 0.9));
+        }
+        s += `<polygon points="${pts.join(' ')}" fill="#6457a8" ${ST(4)}/>`;
+        s += `<path d="M84,58 C84,42 106,46 106,30" fill="none" stroke="${I}" stroke-width="10" stroke-linecap="round"/>`;
+        s += `<path d="M84,58 C84,42 106,46 106,30" fill="none" stroke="#d99a55" stroke-width="5" stroke-linecap="round"/>`;
+        s += at(84, 108, 1, head({ fur: FUR.black, inner: '#ff7fa0', eyes: 'wide', mouth: 'o', id: 'E', whisk: '#fff' }));
+        s += `<rect x="75" y="55" width="18" height="12" rx="3" fill="#b8c0d4" ${ST(3.5)}/>`;
+        s += star(107, 26, 16, 8, '#fff35c', 3) + star(107, 26, 7, 6, '#fff');
+        s += `<path d="M14,66 l12,6 M10,92 h14 M16,118 l12,-5 M154,66 l-12,6 M158,92 h-14 M152,118 l-12,-5" fill="none" ${ST(4)}/>`;
+        s += `<path d="M136,40 q8,10 0,15 q-8,-5 0,-15 Z" fill="#7fd3ff" ${ST(2.5)}/>`;
+        return s;
+      }
+    },
+    D: {
+      name: 'Tuna Time', tag: 'DEFUSE', face: '#19a7a0',
+      art() {
+        let s = `<rect width="168" height="162" fill="#c6f2e8"/>` + dots('#19a7a0', 0.25);
+        s += heart(24, 36, 1.1, '#ff6f91', 3) + heart(146, 52, 0.9, '#ff6f91', 3) + heart(134, 22, 0.65, '#ff6f91', 3);
+        s += at(84, 66, 0.98, head({ fur: FUR.ginger, dark: FUR.gingerD, stripes: true, eyes: 'happy', mouth: 'cat3', blush: true, id: 'D' }));
+        s += `<rect x="38" y="114" width="92" height="48" rx="7" fill="#e3e8f2" ${ST(4)}/>`;
+        s += `<rect x="40" y="124" width="88" height="24" fill="#2f8fe0"/>`;
+        s += `<path d="M66,136 Q78,124 94,136 Q78,148 66,136 Z M94,136 L104,128 L104,144 Z" fill="#fff"/><circle cx="73" cy="134" r="1.8" fill="${I}"/>`;
+        s += `<ellipse cx="84" cy="114" rx="46" ry="11" fill="#cdd5e6" ${ST(4)}/>`;
+        s += `<ellipse cx="84" cy="113" rx="37" ry="6.5" fill="#ff9d86"/><path d="M62,112 q6,-3 12,0 M86,111 q6,-3 12,0" fill="none" stroke="#e06f5c" stroke-width="2" stroke-linecap="round"/>`;
+        s += `<ellipse cx="44" cy="108" rx="15" ry="11" fill="${FUR.ginger}" ${ST(4)}/><ellipse cx="124" cy="108" rx="15" ry="11" fill="${FUR.ginger}" ${ST(4)}/>`;
+        s += `<path d="M39,105 v5 M45,104 v6 M119,104 v6 M125,105 v5" fill="none" ${ST(2.4)}/>`;
+        return s;
+      }
+    },
+    N: {
+      name: 'Nope Paw', tag: 'NOPE', face: '#ff5fa0',
+      art() {
+        let s = `<rect width="168" height="162" fill="#ffe0ec"/>` + dots('#ff5fa0', 0.25);
+        s += `<circle cx="84" cy="80" r="62" fill="none" stroke="${I}" stroke-width="20"/><circle cx="84" cy="80" r="62" fill="none" stroke="#ff3b30" stroke-width="13"/>`;
+        s += `<path d="M40,36 L128,124" stroke="${I}" stroke-width="20" stroke-linecap="round"/><path d="M40,36 L128,124" stroke="#ff3b30" stroke-width="13" stroke-linecap="round"/>`;
+        s += at(70, 104, 0.92, head({ fur: FUR.grey, dark: FUR.greyD, stripes: true, eyes: 'lid', mouth: 'flat', id: 'N' }));
+        s += at(124, 66, 1, paw(FUR.grey, { arm: 90 }), 14);
+        return s;
+      }
+    },
+    A: {
+      name: 'Pounce', tag: 'ATTACK', face: '#ff7a1a',
+      art() {
+        let s = `<rect width="168" height="162" fill="#ffe2b5"/>` + rays(84, 84, 30, 220, '#ffc980', '#ffe2b5');
+        s += star(84, 84, 82, 12, '#fff3d1', 4, 0.72);
+        s += at(84, 86, 1.22, head({ fur: FUR.ginger, dark: FUR.gingerD, stripes: true, eyes: 'fierce', mouth: 'grin', id: 'A' }));
+        for (const [x, r] of [[26, -14], [142, 14]]) {
+          let p = `<ellipse cx="0" cy="0" rx="22" ry="17" fill="${FUR.ginger}" ${ST(4)}/><path d="M-7,-12 v8 M7,-12 v8" fill="none" ${ST(2.5)}/>`;
+          p += `<path d="M-13,-10 L-17,-30 L-7,-14 Z M0,-15 L0,-35 L5,-16 Z M13,-10 L17,-30 L8,-14 Z" fill="#fff" ${ST(2.5)}/>`;
+          s += at(x, 134, 1, p, r);
+        }
+        return s;
+      }
+    },
+    S: {
+      name: 'Nap Time', tag: 'SKIP', face: '#6b5bd8', ttl: '#fff4dc',
+      art() {
+        let s = `<rect width="168" height="162" fill="#4d3fb0"/>`;
+        s += sparkle(130, 70, 6, '#fff') + sparkle(150, 100, 4, '#ffe27a') + sparkle(60, 22, 5, '#fff') + sparkle(98, 14, 3.5, '#ffe27a') + sparkle(16, 76, 4, '#fff');
+        s += `<path d="M36,14 A20,20 0 1 0 50,48 A16,16 0 1 1 36,14 Z" fill="#ffe27a" ${ST(3.5)}/>`;
+        s += `<rect x="6" y="120" width="156" height="40" rx="18" fill="#ff8fb1" ${ST(4)}/><path d="M20,134 h20 M128,134 h20" stroke="#ff6f9a" stroke-width="4" stroke-linecap="round"/>`;
+        s += `<ellipse cx="96" cy="108" rx="58" ry="34" fill="${FUR.blue}" ${ST(4)}/>`;
+        s += `<path d="M90,78 q6,10 0,18 M108,77 q6,10 0,18 M126,82 q5,9 -1,16" fill="none" stroke="${FUR.blueD}" stroke-width="4.5" stroke-linecap="round"/>`;
+        s += `<path d="M150,112 C164,132 136,146 104,142 C88,140 76,140 68,136" fill="none" stroke="${I}" stroke-width="17" stroke-linecap="round"/>`;
+        s += `<path d="M150,112 C164,132 136,146 104,142 C88,140 76,140 68,136" fill="none" stroke="${FUR.blue}" stroke-width="9" stroke-linecap="round"/>`;
+        s += at(56, 104, 0.8, head({ fur: FUR.blue, dark: FUR.blueD, stripes: true, eyes: 'sleep', mouth: 'cat3', blush: true, id: 'S' }), -14);
+        const z = (x, y, sz) => `<text x="${x}" y="${y}" font-family="${DISPLAY}" font-size="${sz}" fill="#fff" stroke="${I}" stroke-width="3" paint-order="stroke">Z</text>`;
+        s += z(104, 62, 24) + z(124, 42, 18) + z(140, 28, 13);
+        return s;
+      }
+    },
+    F: {
+      name: 'Big Eyes', tag: 'FAVOR', face: '#ff8fb1',
+      art() {
+        let s = `<rect width="168" height="162" fill="#fff0f5"/>` + dots('#ff8fb1', 0.35);
+        s += sparkle(20, 24, 8, '#ffc23c') + sparkle(150, 96, 6, '#ff8fb1') + sparkle(16, 110, 5, '#ff8fb1');
+        s += at(80, 72, 1.08, head({ fur: FUR.cream, dark: '#e9caa0', eyes: 'big', mouth: 'cat3', blush: true, id: 'F', inner: '#ffb3c8', patches: `<ellipse cx="-30" cy="-30" rx="22" ry="18" fill="#c9cfdd"/>`, earL: '#c9cfdd' }));
+        s += `<path d="M112,10 h40 a10,10 0 0 1 10,10 v18 a10,10 0 0 1 -10,10 h-24 l-10,9 l1,-9 h-7 a10,10 0 0 1 -10,-10 v-18 a10,10 0 0 1 10,-10 Z" fill="#fff" ${ST(3.5)}/>`;
+        s += heart(132, 30, 0.95, '#ff3b5c', 2.5);
+        s += at(126, 138, 0.9, paw(FUR.cream, { arm: 60 }), -24);
+        return s;
+      }
+    },
+    H: {
+      name: 'Zoomies', tag: 'SHUFFLE', face: '#2f9fe8',
+      art() {
+        let s = `<rect width="168" height="162" fill="#c4e8ff"/>`;
+        const arc = (a1, a2) => {
+          const r = 66, cx = 84, cy = 82;
+          const p = (a) => [f1(cx + Math.cos(a * Math.PI / 180) * r), f1(cy + Math.sin(a * Math.PI / 180) * r)];
+          const [x1, y1] = p(a1), [x2, y2] = p(a2);
+          const tip = p(a2 + 10), b1 = [f1(cx + Math.cos(a2 * Math.PI / 180) * (r - 12)), f1(cy + Math.sin(a2 * Math.PI / 180) * (r - 12))], b2 = [f1(cx + Math.cos(a2 * Math.PI / 180) * (r + 12)), f1(cy + Math.sin(a2 * Math.PI / 180) * (r + 12))];
+          return `<path d="M${x1},${y1} A${r},${r} 0 0 1 ${x2},${y2}" fill="none" stroke="${I}" stroke-width="15" stroke-linecap="round"/><path d="M${x1},${y1} A${r},${r} 0 0 1 ${x2},${y2}" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>` +
+            `<polygon points="${b1.join(',')} ${tip.join(',')} ${b2.join(',')}" fill="#fff" ${ST(3.5)}/>`;
+        };
+        s += arc(200, 320) + arc(20, 140);
+        s += at(52, 94, 0.72, head({ fur: '#ffd29e', eyes: 'wide', mouth: 'grin', id: 'Hg', whisk: '#ffd29e' }), -8).replace('<g transform', '<g opacity=".35" transform');
+        s += `<path d="M6,70 h22 M2,88 h18 M8,106 h20" stroke="#fff" stroke-width="5" stroke-linecap="round"/>`;
+        s += at(100, 88, 0.92, head({ fur: '#ffb35c', dark: '#e07b22', stripes: true, eyes: 'dizzy', mouth: 'grin', id: 'H' }), 10);
+        s += `<circle cx="140" cy="146" r="12" fill="#fff" ${ST(3)}/><circle cx="124" cy="152" r="9" fill="#fff" ${ST(3)}/><circle cx="154" cy="132" r="7" fill="#fff" ${ST(3)}/>`;
+        return s;
+      }
+    },
+    P: {
+      name: 'Fortune Cat', tag: 'PEEK', face: '#4527a0', ttl: '#fff4dc',
+      art() {
+        let s = `<rect width="168" height="162" fill="#2a1b6e"/>`;
+        s += sparkle(18, 22, 7, '#ffe27a') + sparkle(150, 30, 5, '#fff') + sparkle(146, 96, 6, '#ffe27a') + sparkle(20, 100, 4, '#fff') + sparkle(36, 54, 3, '#fff') + sparkle(132, 60, 3, '#fff');
+        s += at(84, 86, 0.9, head({ fur: '#b7a7e8', dark: '#8f7cd1', stripes: true, eyes: 'big', mouth: 'o', id: 'P', inner: '#ff9db8' }));
+        s += `<path d="M60,50 Q84,56 108,50 L98,8 Q96,2 90,6 Z" fill="#7b58f0" ${ST(4)}/>`;
+        s += `<path d="M64,44 Q84,50 104,44" fill="none" stroke="#ff5a8a" stroke-width="6"/>`;
+        s += star(86, 28, 6, 5, '#ffe27a') + star(96, 40, 4, 5, '#ffe27a');
+        s += `<ellipse cx="84" cy="52" rx="34" ry="7" fill="#7b58f0" ${ST(4)}/>`;
+        s += `<circle cx="84" cy="138" r="27" fill="#8fe9ff" ${ST(4)}/>`;
+        s += at(84, 140, 1, `<rect x="-6" y="-9" width="12" height="17" rx="2" fill="#ff6fa5" ${ST(2)} transform="rotate(-24) translate(-9 0)"/><rect x="-6" y="-11" width="12" height="17" rx="2" fill="#ffe27a" ${ST(2)}/><rect x="-6" y="-9" width="12" height="17" rx="2" fill="#fff" ${ST(2)} transform="rotate(24) translate(9 0)"/>`);
+        s += `<path d="M66,128 A20,20 0 0 1 78,116" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>`;
+        s += `<ellipse cx="54" cy="146" rx="12" ry="9" fill="#b7a7e8" ${ST(3.5)}/><ellipse cx="114" cy="146" rx="12" ry="9" fill="#b7a7e8" ${ST(3.5)}/>`;
+        return s;
+      }
+    },
+    '1': {
+      name: 'Sir Tuxedo', tag: 'COMBO', face: '#ffd45e',
+      art() {
+        let s = `<rect width="168" height="162" fill="#fff1bf"/>` + dots('#e8b520', 0.35, 16);
+        s += `<path d="M30,162 Q34,128 84,124 Q134,128 138,162 Z" fill="${FUR.black}" ${ST(4)}/><path d="M64,162 L84,128 L104,162 Z" fill="#fff" ${ST(3.5)}/>`;
+        s += at(84, 84, 1.3, head({ fur: FUR.black, inner: '#ff8fb1', eyes: 'open', mouth: 'smile', muzzle: '#fff', id: 'T1', whisk: '#fff',
+          mask: `<path d="M0,-43 L-7,2 L7,2 Z" fill="#fff"/>`,
+          extra: `<circle cx="18" cy="-4" r="14" fill="#fff" fill-opacity=".18" stroke="#ffc23c" stroke-width="3.5"/><path d="M31,2 Q40,24 28,40" fill="none" stroke="#ffc23c" stroke-width="2"/>` }));
+        s += `<path d="M84,138 L62,126 L62,150 Z M84,138 L106,126 L106,150 Z" fill="#ff3b5c" ${ST(3.5)}/><rect x="77" y="131" width="14" height="14" rx="4" fill="#ff3b5c" ${ST(3.5)}/>`;
+        return s;
+      }
+    },
+    '2': {
+      name: 'Marmalade', tag: 'COMBO', face: '#ffad94',
+      art() {
+        let s = `<rect width="168" height="162" fill="#ffe6dc"/>` + dots('#ff7a5c', 0.3, 16);
+        s += at(84, 92, 1.3, head({ fur: FUR.ginger, dark: FUR.gingerD, stripes: true, eyes: 'open', mouth: 'lick', id: 'T2', blush: true }));
+        const hat = `<circle cx="-16" cy="-8" r="14" fill="#fff" ${ST(4)}/><circle cx="16" cy="-8" r="14" fill="#fff" ${ST(4)}/><circle cx="0" cy="-16" r="16" fill="#fff" ${ST(4)}/>` +
+          `<circle cx="-16" cy="-8" r="12" fill="#fff"/><circle cx="16" cy="-8" r="12" fill="#fff"/><circle cx="0" cy="-16" r="14" fill="#fff"/>` +
+          `<rect x="-24" y="0" width="48" height="14" rx="3" fill="#fff" ${ST(4)}/>`;
+        s += at(84, 30, 0.92, hat);
+        return s;
+      }
+    },
+    '3': {
+      name: 'Calico Jo', tag: 'COMBO', face: '#7fd6a0',
+      art() {
+        let s = `<rect width="168" height="162" fill="#d8f5e1"/>` + dots('#3fae6a', 0.3, 16);
+        const flower = (() => { let f = ''; for (let i = 0; i < 5; i++) { const a = i * 72 * Math.PI / 180; f += `<circle cx="${f1(Math.cos(a) * 8)}" cy="${f1(Math.sin(a) * 8)}" r="7" fill="#ff6fa5" ${ST(2.5)}/>`; } return f + `<circle r="5.5" fill="#ffd24a" ${ST(2.5)}/>`; })();
+        s += at(84, 90, 1.3, head({ fur: '#fff8ec', eyes: 'happy', mouth: 'cat3', id: 'T3', blush: true, earL: FUR.ginger, earR: FUR.black,
+          patches: `<ellipse cx="-30" cy="-26" rx="26" ry="22" fill="${FUR.ginger}"/><ellipse cx="32" cy="-12" rx="22" ry="28" fill="${FUR.black}"/><ellipse cx="-34" cy="26" rx="14" ry="10" fill="${FUR.black}"/>`,
+          extra: at(-38, -48, 1, flower) }));
+        return s;
+      }
+    },
+    '4': {
+      name: 'Smokey', tag: 'COMBO', face: '#b5b0f5',
+      art() {
+        let s = `<rect width="168" height="162" fill="#e7e5ff"/>` + dots('#7a72e0', 0.3, 16);
+        s += at(80, 88, 1.3, head({ fur: FUR.grey, dark: FUR.greyD, stripes: true, eyes: 'lid', mouth: 'flat', id: 'T4' }));
+        s += `<path d="M118,104 q-6,-8 0,-16 q6,-8 0,-16 M132,104 q-6,-8 0,-16 q6,-8 0,-16" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>`;
+        s += `<path d="M148,124 a10,10 0 0 1 0,20" fill="none" ${ST(6)}/>`;
+        s += `<rect x="108" y="110" width="40" height="44" rx="8" fill="#fff" ${ST(4)}/><ellipse cx="128" cy="113" rx="16" ry="4" fill="#7a4a2b"/>`;
+        s += heart(128, 134, 0.6, '#ff6f91');
+        s += `<ellipse cx="108" cy="142" rx="13" ry="10" fill="${FUR.grey}" ${ST(3.5)}/>`;
+        return s;
+      }
+    },
+    '5': {
+      name: 'Siamese Sue', tag: 'COMBO', face: '#86cbe8',
+      art() {
+        let s = `<rect width="168" height="162" fill="#dcf2fb"/>` + dots('#3a9cc7', 0.3, 16);
+        const crown = `<path d="M-18,0 L-18,-18 L-9,-8 L0,-22 L9,-8 L18,-18 L18,0 Z" fill="#ffc93c" ${ST(3.5)}/><circle cx="0" cy="-6" r="3.5" fill="#ff3b5c"/>`;
+        s += at(84, 90, 1.3, head({ fur: FUR.siam, earFur: FUR.point, inner: '#c9917c', eyes: 'blue', mouth: 'cat3', id: 'T5',
+          mask: `<ellipse cx="0" cy="16" rx="27" ry="24" fill="#b78b72"/><ellipse cx="0" cy="22" rx="17" ry="14" fill="#9c7058"/>`,
+          extra: at(0, -42, 1, crown) }));
+        return s;
+      }
+    }
+  };
+
+  const ORDER = ['E', 'D', 'N', 'A', 'S', 'F', 'H', 'P', '1', '2', '3', '4', '5'];
+
+  function cardSymbol(t) {
+    const c = ART[t];
+    const tl = c.name.toUpperCase();
+    const ts = Math.min(20, 170 / (tl.length * 0.8));
+    return `<symbol id="c-${t}" viewBox="0 0 200 280">` +
+      `<rect x="2" y="2" width="196" height="276" rx="22" fill="${I}"/>` +
+      `<rect x="8" y="8" width="184" height="264" rx="17" fill="${c.face}"/>` +
+      `<text x="100" y="35" text-anchor="middle" font-family="${DISPLAY}" font-size="${f1(ts)}" fill="${c.ttl || I}">${tl}</text>` +
+      `<clipPath id="w-${t}"><rect x="16" y="44" width="168" height="162" rx="12"/></clipPath>` +
+      `<g clip-path="url(#w-${t})"><g transform="translate(16 44)">${c.art()}</g></g>` +
+      `<rect x="16" y="44" width="168" height="162" rx="12" fill="none" stroke="${I}" stroke-width="4"/>` +
+      `<rect x="30" y="218" width="140" height="40" rx="20" fill="#fff4dc" stroke="${I}" stroke-width="4"/>` +
+      `<text x="100" y="246" text-anchor="middle" font-family="${DISPLAY}" font-size="21" fill="${I}">${c.tag}</text>` +
+      `</symbol>`;
+  }
+
+  function backSymbol() {
+    let s = `<symbol id="c-back" viewBox="0 0 200 280">`;
+    s += `<rect x="2" y="2" width="196" height="276" rx="22" fill="${I}"/>`;
+    s += `<rect x="8" y="8" width="184" height="264" rx="17" fill="#ff4b2b"/>`;
+    s += `<clipPath id="w-back"><rect x="8" y="8" width="184" height="264" rx="17"/></clipPath><g clip-path="url(#w-back)">`;
+    const pp = `<ellipse cx="0" cy="4" rx="7" ry="6"/><circle cx="-7" cy="-5" r="3"/><circle cx="0" cy="-8" r="3"/><circle cx="7" cy="-5" r="3"/>`;
+    let k = 0;
+    for (let y = 18; y < 290; y += 34) for (let x = (k++ % 2) ? 20 : 40; x < 200; x += 40)
+      s += `<g transform="translate(${x} ${y}) rotate(${(x * 7 + y * 3) % 50 - 25})" fill="#ff7a5a">${pp}</g>`;
+    s += `</g>`;
+    s += `<rect x="22" y="22" width="156" height="236" rx="12" fill="none" stroke="#fff4dc" stroke-width="3" stroke-dasharray="2 7" stroke-linecap="round"/>`;
+    s += `<circle cx="100" cy="140" r="62" fill="#fff4dc" ${ST(5)}/>`;
+    s += `<path d="M100,96 C100,82 118,84 120,70" fill="none" stroke="${I}" stroke-width="8" stroke-linecap="round"/>`;
+    s += star(121, 66, 11, 8, '#ffd24a', 3);
+    s += at(100, 146, 0.86, `<path d="M-44,-14 L-42,-59 L-10,-39 Z M44,-14 L42,-59 L10,-39 Z" fill="${I}"/><path d="M-47,-4 C-47,-32 -27,-43 0,-43 C27,-43 47,-32 47,-4 C47,24 28,38 0,38 C-28,38 -47,24 -47,-4 Z" fill="${I}"/>` +
+      `<ellipse cx="-18" cy="-4" rx="9" ry="10" fill="#ffd24a"/><ellipse cx="18" cy="-4" rx="9" ry="10" fill="#ffd24a"/><ellipse cx="-18" cy="-3" rx="3" ry="7" fill="${I}"/><ellipse cx="18" cy="-3" rx="3" ry="7" fill="${I}"/>`);
+    s += `</symbol>`;
+    return s;
+  }
+
+  function sprite() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;width:0;height:0" aria-hidden="true"><defs>` +
+      ORDER.map(cardSymbol).join('') + backSymbol() + `</defs></svg>`;
+  }
+
+  const Art = { sprite, ORDER, ART };
+  if (typeof module !== 'undefined') module.exports = Art; else root.Art = Art;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// Boom Whiskers rules engine. Host-authoritative, two players.
+(function (root) {
+  const WINDOW = 4000; // ms the other player has to play a Nope
+  const COUNTS = { E: 4, D: 6, N: 5, A: 4, S: 4, F: 4, H: 4, P: 5, '1': 4, '2': 4, '3': 4, '4': 4, '5': 4 };
+  const HAND_ORDER = 'DNASFHP12345E';
+  const ACTIONS = 'ASFHP';
+
+  function shuffle(a, rnd) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  const sortHand = (h) => h.slice().sort((a, b) => HAND_ORDER.indexOf(a) - HAND_ORDER.indexOf(b));
+
+  function newGame(names, rnd, prev) {
+    rnd = rnd || Math.random;
+    const pool = [];
+    for (const t in COUNTS) if (t !== 'E' && t !== 'D') for (let i = 0; i < COUNTS[t]; i++) pool.push(t);
+    shuffle(pool, rnd);
+    const hands = [['D'], ['D']];
+    for (let i = 0; i < 7; i++) { hands[0].push(pool.pop()); hands[1].push(pool.pop()); }
+    // Two players: one Kaboom Cat and two spare Tuna Time go into the draw pile.
+    const deck = shuffle(pool.concat(['E', 'D', 'D']), rnd);
+    return {
+      names: names.slice(), hands, deck, disc: [],
+      turn: prev && prev.win >= 0 ? 1 - prev.win : (rnd() < 0.5 ? 0 : 1), left: 1,
+      ph: 'play', pend: null, need: -1, favorTo: -1, peek: null, log: [],
+      win: -1, nid: prev ? prev.nid : 0, gid: prev ? prev.gid + 1 : 1, lastN: prev ? prev.lastN : 0,
+      guestCid: prev ? prev.guestCid : null
+    };
+  }
+
+  function note(G, seat, kind, card, to) {
+    G.log.push([seat, kind, card || '', to == null ? -1 : to]);
+    if (G.log.length > 14) G.log.shift();
+  }
+  function endTurnStep(G) {
+    G.left -= 1;
+    if (G.left <= 0) { G.turn = 1 - G.turn; G.left = 1; }
+  }
+  function removeCards(hand, cards) {
+    const tmp = hand.slice();
+    for (const c of cards) { const i = tmp.indexOf(c); if (i < 0) return null; tmp.splice(i, 1); }
+    return tmp;
+  }
+
+  // Works out what a set of selected cards would do. Returns kind or null.
+  function comboKind(cards) {
+    cards = String(cards || '');
+    if (cards.length === 1) return ACTIONS.includes(cards) ? cards : null;
+    const same = cards.split('').every((c) => c === cards[0]);
+    const special = /[ED]/.test(cards);
+    if (special) return null;
+    if (cards.length === 2 && same) return 'pair';
+    if (cards.length === 3 && same) return 'triple';
+    if (cards.length === 5 && new Set(cards.split('')).size === 5) return 'five';
+    return null;
+  }
+
+  function resolve(G, rnd) {
+    const p = G.pend;
+    G.pend = null;
+    G.ph = 'play';
+    const nopes = p.chain.length - 1;
+    const me = p.by, other = 1 - me;
+    if (nopes % 2 === 1) { note(G, me, 'fizzle', p.cards); return; }
+    switch (p.kind) {
+      case 'A': {
+        const owed = G.left + 1; // 2 turns, plus any turns the attacker still had left
+        G.turn = other; G.left = owed;
+        note(G, me, 'attack', '', -1);
+        break;
+      }
+      case 'S': note(G, me, 'skip'); endTurnStep(G); break;
+      case 'H': shuffle(G.deck, rnd); note(G, me, 'shuffle'); break;
+      case 'P':
+        G.nid += 1;
+        G.peek = { seat: me, id: G.nid, cards: G.deck.slice(0, 3).join('') };
+        note(G, me, 'peek');
+        break;
+      case 'F':
+        if (!G.hands[other].length) { note(G, other, 'empty'); break; }
+        G.ph = 'favor'; G.need = other; G.favorTo = me;
+        break;
+      case 'pair': {
+        const h = G.hands[other];
+        if (!h.length) { note(G, other, 'empty'); break; }
+        const c = h.splice(Math.floor(rnd() * h.length), 1)[0];
+        G.hands[me].push(c);
+        note(G, me, 'steal', c, me);
+        break;
+      }
+      case 'triple': {
+        const h = G.hands[other], i = h.indexOf(p.named);
+        if (i >= 0) { h.splice(i, 1); G.hands[me].push(p.named); note(G, me, 'hit', p.named); }
+        else note(G, me, 'miss', p.named);
+        break;
+      }
+      case 'five':
+        if (!G.disc.length) break;
+        G.ph = 'pick'; G.need = me;
+        break;
+    }
+  }
+
+  // Applies one action from a seat. Returns {ok} or {err}.
+  function dispatch(G, seat, a, now, rnd) {
+    rnd = rnd || Math.random;
+    const err = (m) => ({ err: m });
+    if (!a || typeof a.t !== 'string') return err('bad action');
+    if (G.ph === 'over') return err('The game is over.');
+    const hand = G.hands[seat];
+    switch (a.t) {
+      case 'play': {
+        if (G.ph !== 'play' || G.turn !== seat) return err('It is not your turn.');
+        const cards = String(a.cards || '');
+        const kind = comboKind(cards);
+        if (!kind) return err('Those cards cannot be played together.');
+        const rest = removeCards(hand, cards);
+        if (!rest) return err('You do not have those cards.');
+        let named = '';
+        if (kind === 'triple') {
+          named = String(a.named || '');
+          if (!/^[DNASFHP12345]$/.test(named)) return err('Pick a card to ask for.');
+        }
+        G.hands[seat] = rest;
+        for (const c of cards) G.disc.push(c);
+        G.pend = { by: seat, kind, cards, named, chain: [seat], end: now + WINDOW };
+        G.ph = 'pending';
+        note(G, seat, 'play', cards);
+        if (kind === 'triple') note(G, seat, 'ask', named);
+        return { ok: true };
+      }
+      case 'nope': {
+        if (G.ph !== 'pending') return err('There is nothing to Nope.');
+        const ch = G.pend.chain;
+        if (ch[ch.length - 1] === seat) return err('Wait for your friend.');
+        const i = hand.indexOf('N');
+        if (i < 0) return err('You have no Nope Paw.');
+        hand.splice(i, 1);
+        G.disc.push('N');
+        ch.push(seat);
+        G.pend.end = now + WINDOW;
+        note(G, seat, 'nope', 'N');
+        return { ok: true };
+      }
+      case 'pass': {
+        if (G.ph !== 'pending') return err('Nothing to wait for.');
+        const ch = G.pend.chain;
+        if (ch[ch.length - 1] === seat) return err('Wait for your friend.');
+        resolve(G, rnd);
+        return { ok: true };
+      }
+      case 'draw': {
+        if (G.ph !== 'play' || G.turn !== seat) return err('It is not your turn.');
+        const c = G.deck.shift();
+        if (c === undefined) { endTurnStep(G); return { ok: true }; }
+        if (c === 'E') {
+          const di = hand.indexOf('D');
+          if (di >= 0) {
+            hand.splice(di, 1);
+            G.disc.push('D');
+            G.ph = 'defuse'; G.need = seat;
+            note(G, seat, 'defused');
+          } else {
+            G.ph = 'over'; G.win = 1 - seat;
+            note(G, seat, 'boom');
+          }
+          return { ok: true };
+        }
+        hand.push(c);
+        note(G, seat, 'draw', c, seat);
+        endTurnStep(G);
+        return { ok: true };
+      }
+      case 'defuseAt': {
+        if (G.ph !== 'defuse' || G.need !== seat) return err('Not now.');
+        let pos = Math.round(Number(a.pos));
+        if (!isFinite(pos)) pos = 0;
+        pos = Math.max(0, Math.min(G.deck.length, pos));
+        G.deck.splice(pos, 0, 'E');
+        G.ph = 'play'; G.need = -1;
+        note(G, seat, 'hide');
+        endTurnStep(G);
+        return { ok: true };
+      }
+      case 'give': {
+        if (G.ph !== 'favor' || G.need !== seat) return err('Not now.');
+        const i = hand.indexOf(String(a.card));
+        if (i < 0) return err('You do not have that card.');
+        const c = hand.splice(i, 1)[0];
+        G.hands[G.favorTo].push(c);
+        note(G, seat, 'give', c, G.favorTo);
+        G.ph = 'play'; G.need = -1; G.favorTo = -1;
+        return { ok: true };
+      }
+      case 'pick': {
+        if (G.ph !== 'pick' || G.need !== seat) return err('Not now.');
+        const i = G.disc.lastIndexOf(String(a.card));
+        if (i < 0 || a.card === 'E') return err('That card is not in the discard pile.');
+        G.disc.splice(i, 1);
+        hand.push(String(a.card));
+        note(G, seat, 'pick', String(a.card));
+        G.ph = 'play'; G.need = -1;
+        return { ok: true };
+      }
+    }
+    return err('Unknown action.');
+  }
+
+  // Closes the Nope window once its time is up. Returns true if state changed.
+  function tick(G, now, rnd) {
+    if (G.ph === 'pending' && now >= G.pend.end) { resolve(G, rnd || Math.random); return true; }
+    return false;
+  }
+
+  // What one seat is allowed to see.
+  function viewFor(G, seat, now) {
+    const o = 1 - seat;
+    const v = {
+      ph: G.ph, you: seat, names: G.names.slice(),
+      hand: sortHand(G.hands[seat]).join(''), oc: G.hands[o].length,
+      dk: G.deck.length, disc: G.disc.join(''),
+      turn: G.turn, left: G.left, need: G.need, win: G.win,
+      ack: G.lastN, gid: G.gid, pend: null, peek: null
+    };
+    if (G.pend) {
+      const ch = G.pend.chain;
+      v.pend = { by: G.pend.by, kind: G.pend.kind, cards: G.pend.cards, named: G.pend.named, ch: ch.length, last: ch[ch.length - 1], rem: Math.max(0, G.pend.end - now) };
+    }
+    if (G.peek && G.peek.seat === seat) v.peek = { id: G.peek.id, cards: G.peek.cards };
+    v.log = G.log.slice(-8).map((e) => [e[0], e[1], e[3] >= 0 && e[3] !== seat ? '?' : e[2]]);
+    if (G.ph === 'over') v.ohand = sortHand(G.hands[o]).join('');
+    return v;
+  }
+
+  const Engine = { WINDOW, COUNTS, newGame, dispatch, tick, viewFor, comboKind, sortHand, shuffle };
+  if (typeof module !== 'undefined') module.exports = Engine; else root.Engine = Engine;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// Boom Whiskers app: lobby, table UI, and live play over the artifact room.
+(function () {
+  const $ = (s, r) => (r || document).querySelector(s);
+  const WIN = Engine.WINDOW;
+  const NAMES = { E: 'Kaboom Cat', D: 'Tuna Time', N: 'Nope Paw', A: 'Pounce', S: 'Nap Time', F: 'Big Eyes', H: 'Zoomies', P: 'Fortune Cat', '1': 'Sir Tuxedo', '2': 'Marmalade', '3': 'Calico Jo', '4': 'Smokey', '5': 'Siamese Sue' };
+  const ROLE = { E: 'Exploding cat', D: 'Defuse', N: 'Nope', A: 'Attack', S: 'Skip', F: 'Favor', H: 'Shuffle', P: 'See the Future' };
+  const COMBO_TEXT = 'Does nothing alone. Play 2 matching cards to steal a random card, 3 matching to name a card and take it, or 5 different cards to take any card from the discard pile.';
+  const TEXT = {
+    E: 'Draw this and you explode, unless you have a Tuna Time to calm it down.',
+    D: 'Used automatically when you draw the Kaboom Cat. Then you secretly hide the Kaboom Cat anywhere in the draw pile. Cannot be Noped.',
+    N: 'Stop any card your friend just played. Works on their turn too. You can Nope a Nope. Cannot stop the Kaboom Cat or Tuna Time.',
+    A: 'End your turn without drawing. Your friend must take 2 turns in a row. If you were attacked, they take your leftover turns plus 2.',
+    S: 'End one turn without drawing a card.',
+    F: 'Your friend chooses one card from their hand and gives it to you.',
+    H: 'Shuffle the draw pile.',
+    P: 'Secretly look at the top 3 cards of the draw pile.'
+  };
+  const desc = (t) => TEXT[t] || COMBO_TEXT;
+  const role = (t) => ROLE[t] || 'Combo cat';
+  const ORDER = 'DNASFHP12345';
+
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { } }
+  };
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const BAD = (c) => c < 32 || (c >= 127 && c <= 159) || c === 173 || (c >= 8203 && c <= 8207) || (c >= 8232 && c <= 8239) || (c >= 8288 && c <= 8303) || c === 65279;
+  const clean = (s) => Array.from(String(s || '')).filter((ch) => !BAD(ch.codePointAt(0))).join('').trim().slice(0, 14);
+
+  let cid = store.get('bw-cid');
+  if (typeof cid !== 'string' || !/^[a-z0-9]{8,20}$/.test(cid)) { cid = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 6); store.set('bw-cid', cid); }
+
+  // ---------- state ----------
+  let room = null, roomState = 'connecting';
+  let mode = null; // 'host' | 'guest' | null
+  let code = null, G = null, V = null;
+  let myName = clean(store.get('bw-name') || '');
+  let screen = 'lobby';
+  let sel = [], focus = null, local = null, seenPeek = 0;
+  let actN = 0, lastAct = null, busy = false, guestErr = null;
+  let partnerHere = false, full = false, pendEnd = 0, lookStart = 0, lastViewObj = null;
+  let defusePos = 0, modalKey = '', screenKey = '';
+
+  // ---------- networking ----------
+  function newCode() {
+    const A = 'ACDEFHJKMNPRTWXY34679';
+    let s = '';
+    for (let i = 0; i < 4; i++) s += A[Math.floor(Math.random() * A.length)];
+    return s;
+  }
+  function presence(obj) {
+    if (!room) return;
+    try { room.presence(obj).catch(() => { }); } catch (e) { }
+  }
+  function hostPublish() {
+    const view = G ? Engine.viewFor(G, 1, Date.now()) : { ph: 'lobby' };
+    if (G && guestErr) view.err = guestErr;
+    presence({ g: code, role: 'host', cid, name: myName || 'Player 1', gcid: G ? G.guestCid : null, view, act: null });
+  }
+  function guestPublish() {
+    presence({ g: code, role: 'guest', cid, name: myName || 'Player 2', act: lastAct, view: null, gcid: null });
+  }
+  function setView(nv) {
+    if (!V || V.gid !== nv.gid) { seenPeek = nv.peek ? (V ? 0 : nv.peek.id) : 0; sel = []; }
+    V = nv;
+    pendEnd = V.pend ? Date.now() + V.pend.rem : 0;
+    const have = V.hand.split('');
+    sel = sel.filter((c) => { const i = have.indexOf(c); if (i < 0) return false; have.splice(i, 1); return true; });
+  }
+  function commit() {
+    if (mode !== 'host') return;
+    if (G) store.set('bw-host', { code, G, t: Date.now() });
+    hostPublish();
+    if (G) { setView(Engine.viewFor(G, 0, Date.now())); screen = 'table'; }
+    render();
+  }
+  function hostOnPeers() {
+    const peers = room.peers();
+    const guests = peers.filter((p) => !p.isMe && p.presence && p.presence.g === code && p.presence.role === 'guest' && typeof p.presence.cid === 'string');
+    let changed = false;
+    if (!G && guests.length) {
+      const p = guests[0];
+      G = Engine.newGame([myName || 'Player 1', clean(p.presence.name) || 'Player 2']);
+      G.guestCid = p.presence.cid;
+      changed = true;
+    }
+    const gp = G && guests.find((p) => p.presence.cid === G.guestCid);
+    if (!!gp !== partnerHere) { partnerHere = !!gp; changed = true; }
+    if (gp) {
+      const nm = clean(gp.presence.name) || G.names[1];
+      if (nm !== G.names[1]) { G.names[1] = nm; changed = true; }
+      const a = gp.presence.act;
+      if (a && typeof a === 'object' && typeof a.n === 'number' && a.n > G.lastN) {
+        G.lastN = a.n;
+        guestErr = null;
+        if (a.t === 'again') { if (G.ph === 'over') G = Engine.newGame(G.names, Math.random, G); }
+        else { const r = Engine.dispatch(G, 1, a, Date.now()); if (r.err) guestErr = { n: a.n, msg: r.err }; }
+        changed = true;
+      }
+    }
+    if (changed) commit();
+  }
+  function guestOnPeers() {
+    const host = room.peers().find((p) => !p.isMe && p.presence && p.presence.g === code && p.presence.role === 'host');
+    let changed = false;
+    if (!!host !== partnerHere) { partnerHere = !!host; changed = true; }
+    if (host) {
+      const pr = host.presence;
+      if (pr.gcid && pr.gcid !== cid) { if (!full) { full = true; changed = true; } }
+      else if (pr.view && pr.view !== lastViewObj) {
+        lastViewObj = pr.view;
+        if (pr.view.ph !== 'lobby' && typeof pr.view.hand === 'string') {
+          setView(pr.view);
+          screen = 'table';
+          if (busy && V.ack >= actN) { busy = false; if (V.err && V.err.n === actN) toast(V.err.msg); }
+          changed = true;
+        }
+      }
+    }
+    if (changed) render();
+  }
+  function doAct(a) {
+    if (mode === 'host') {
+      if (a.t === 'again') { if (G && G.ph === 'over') G = Engine.newGame(G.names, Math.random, G); }
+      else { const r = Engine.dispatch(G, 0, a, Date.now()); if (r.err) toast(r.err); }
+      sel = []; local = null;
+      commit();
+    } else if (mode === 'guest') {
+      actN = Math.max(actN + 1, Date.now());
+      lastAct = Object.assign({ n: actN }, a);
+      busy = true; sel = []; local = null;
+      guestPublish();
+      render();
+      const n = actN;
+      setTimeout(() => { if (busy && n === actN) guestPublish(); }, 2500);
+      setTimeout(() => { if (busy && n === actN) { busy = false; render(); toast('Your move did not go through. Check your connection and try again.'); } }, 9000);
+    }
+  }
+  function hostStart(resume) {
+    mode = 'host'; full = false; guestErr = null; V = null; partnerHere = false;
+    if (resume) { code = resume.code; G = resume.G; } else { code = newCode(); G = null; store.del('bw-host'); }
+    screen = G ? 'table' : 'hostwait';
+    commit();
+    if (room) hostOnPeers();
+  }
+  function guestJoin(c) {
+    mode = 'guest'; code = c; V = null; full = false; partnerHere = false; lastViewObj = null; busy = false; lastAct = null;
+    screen = 'join'; lookStart = Date.now();
+    store.set('bw-guest', { code: c, t: Date.now() });
+    guestPublish();
+    render();
+    if (room) guestOnPeers();
+  }
+  function leave() {
+    if (mode === 'host') store.del('bw-host');
+    if (mode === 'guest') store.del('bw-guest');
+    mode = null; code = null; G = null; V = null; screen = 'lobby'; local = null; sel = []; partnerHere = false;
+    presence({ g: null, role: null, view: null, act: null, gcid: null });
+    render();
+  }
+
+  // ---------- helpers for text ----------
+  const cardSVG = (t, cls) => `<svg class="card ${cls || ''}" viewBox="0 0 200 280" role="img" aria-label="${t === 'back' ? 'Face-down card' : NAMES[t]}"><use href="#c-${t}"/></svg>`;
+  function who(v, s) { return s === v.you ? 'You' : esc(v.names[s] || 'Friend'); }
+  function playLabel(kind, cards, named) {
+    if (kind === 'pair') return `a pair of ${NAMES[cards[0]]}`;
+    if (kind === 'triple') return `three ${NAMES[cards[0]]}`;
+    if (kind === 'five') return 'five different cards';
+    return NAMES[cards] || 'a card';
+  }
+  function logLine(v, e) {
+    const [s, k, c] = e;
+    const W = who(v, s), O = who(v, 1 - s);
+    const you = s === v.you;
+    switch (k) {
+      case 'play': { const kind = Engine.comboKind(c); return `${W} played ${playLabel(kind, c)}.`; }
+      case 'ask': return `${W} asked for ${NAMES[c]}.`;
+      case 'nope': return `${W} played Nope Paw!`;
+      case 'fizzle': return `It got Noped. Nothing happens.`;
+      case 'attack': return `Pounce! ${O === 'You' ? 'You have' : O + ' has'} extra turns now.`;
+      case 'skip': return `${W} skipped a turn.`;
+      case 'shuffle': return `${W} shuffled the draw pile.`;
+      case 'peek': return `${W} peeked at the top 3 cards.`;
+      case 'empty': return `${W} had no cards to give.`;
+      case 'steal': return you ? `You stole ${c === '?' ? 'a card' : NAMES[c]}.` : `${W} stole a card from you.`;
+      case 'hit': return `${W} took ${NAMES[c]}${you ? '' : ' from you'}.`;
+      case 'miss': return `${O} had no ${NAMES[c]}.`;
+      case 'draw': return you ? `You drew ${c === '?' ? 'a card' : NAMES[c]}.` : `${W} drew a card.`;
+      case 'defused': return `${W} drew the Kaboom Cat and calmed it with Tuna Time!`;
+      case 'hide': return `${W} hid the Kaboom Cat back in the draw pile.`;
+      case 'give': return you ? `You gave ${c === '?' ? 'a card' : NAMES[c]}.` : `${W} gave you ${c === '?' ? 'a card' : NAMES[c]}.`;
+      case 'pick': return `${W} took ${NAMES[c]} from the discard pile.`;
+      case 'boom': return `${W} exploded!`;
+    }
+    return '';
+  }
+  function selKind() { return sel.length ? Engine.comboKind(sel.join('')) : null; }
+  function playButtonLabel(kind) {
+    if (!sel.length) return 'Pick cards to play';
+    if (!kind) return 'Can’t play that';
+    if (kind === 'pair') return 'Steal a random card';
+    if (kind === 'triple') return 'Name a card to take';
+    if (kind === 'five') return 'Take from discard';
+    return 'Play ' + NAMES[kind];
+  }
+
+  // ---------- rendering ----------
+  function render() {
+    renderTop();
+    renderScreen();
+    renderModal();
+    tickCountdown();
+  }
+  function renderTop() {
+    const chip = $('#chip');
+    let txt = '', tone = '';
+    if (roomState === 'off') { txt = 'Offline'; tone = 'bad'; }
+    else if (roomState === 'connecting') { txt = 'Connecting'; }
+    else if (!mode) { txt = 'Ready'; tone = 'good'; }
+    else if (mode === 'host' && !G) { txt = 'Game ' + code; }
+    else if (mode === 'guest' && !V) { txt = 'Game ' + code; }
+    else {
+      const other = V ? V.names[1 - V.you] : 'Friend';
+      txt = code + ' · ' + (partnerHere ? clean(other) + ' is here' : clean(other) + ' is away');
+      tone = partnerHere ? 'good' : 'warn';
+    }
+    chip.textContent = txt;
+    chip.className = 'chip ' + tone;
+  }
+
+  function lobbyHTML() {
+    const res = store.get('bw-host');
+    const gres = store.get('bw-guest');
+    const fresh = (x) => x && Date.now() - x.t < 6 * 3600 * 1000;
+    const can = roomState === 'on';
+    let resume = '';
+    if (fresh(res) && res.G && res.G.ph !== 'over') resume = `<button class="btn ghost" data-act="resume">Resume hosting game ${esc(res.code)}</button>`;
+    else if (fresh(gres)) resume = `<button class="btn ghost" data-act="rejoin">Rejoin game ${esc(gres.code)}</button>`;
+    let warn = '';
+    if (roomState === 'off') warn = window.BW_STANDALONE ? `<p class="warn">The connection library didn’t load. Check your internet connection and reload the page.</p>` : `<p class="warn">Live play is not available in this view. Open this page in Claude, signed in, from the link you were shared.</p>`;
+    else if (roomState === 'connecting') warn = `<p class="fine">Connecting to the table…</p>`;
+    return `<section class="lobby">
+      <div class="hero" aria-hidden="true">${cardSVG('D', 'h1')}${cardSVG('E', 'h2')}${cardSVG('N', 'h3')}</div>
+      <h1>Boom Whiskers</h1>
+      <p class="lede">A card game for two phones. Draw cards, dodge the Kaboom Cat, and be the last cat standing.</p>
+      <div class="form">
+        <label for="name">Your name</label>
+        <input id="name" maxlength="14" autocomplete="nickname" placeholder="e.g. Mae" value="${esc(myName)}">
+        <button class="btn hot big" data-act="host" ${can ? '' : 'disabled'}>Start a game</button>
+        <div class="or"><span>or join your friend</span></div>
+        <div class="joinrow">
+          <input id="code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Game code">
+          <button class="btn" data-act="join" ${can ? '' : 'disabled'}>Join</button>
+        </div>
+        ${resume}
+      </div>
+      ${warn}
+      <button class="link" data-act="rules">How to play</button>
+    </section>`;
+  }
+  function hostWaitHTML() {
+    return `<section class="wait">
+      <p class="eyebrow">Your game code</p>
+      <div class="bigcode">${esc(code)}</div>
+      <button class="btn ghost small" data-act="copy">Copy code</button>
+      <p class="lede">Send this code to your friend. They open this same page, type it in, and the game starts right away.</p>
+      <div class="paws" aria-hidden="true"><i></i><i></i><i></i></div>
+      <button class="link" data-act="leave">Cancel</button>
+    </section>`;
+  }
+  function joinHTML() {
+    const slow = Date.now() - lookStart > 8000;
+    return `<section class="wait">
+      <p class="eyebrow">Joining game</p>
+      <div class="bigcode">${esc(code)}</div>
+      ${full ? `<p class="warn">Someone else already joined this game. Ask your friend to start a new one.</p>` :
+        `<div class="paws" aria-hidden="true"><i></i><i></i><i></i></div>
+      <p class="lede" id="joinmsg">${partnerHere ? 'Found it. Dealing the cards…' : slow ? (window.BW_STANDALONE ? 'Still looking. Check the code and make sure your friend’s game is open. If it never connects, one of your networks may block direct connections: try mobile data or another Wi-Fi.' : 'Still looking. Check the code, and make sure your friend has the game open on their phone.') : 'Looking for your friend’s game…'}</p>`}
+      <button class="link" data-act="leave">Cancel</button>
+    </section>`;
+  }
+
+  function statusHTML(v) {
+    const me = v.you, op = 1 - me, oname = esc(v.names[op]);
+    if (v.ph === 'pending' && v.pend) {
+      const p = v.pend, nopes = p.ch - 1;
+      const cards = p.cards.split('').map((c) => cardSVG(c, 'mini')).join('');
+      const nopeStack = nopes ? `<div class="nopes">${Array.from({ length: Math.min(nopes, 4) }, () => cardSVG('N', 'mini')).join('')}</div>` : '';
+      const state = nopes % 2 ? 'Noped. Right now nothing happens.' : 'Happens unless someone Nopes it.';
+      return `<div class="pend">
+        <div class="played">${cards}${nopeStack}</div>
+        <p class="st-title">${who(v, p.by)} played ${playLabel(p.kind, p.cards)}${p.kind === 'triple' ? ` and asked for ${NAMES[p.named]}` : ''}</p>
+        <p class="st-sub">${state}</p>
+        <div class="cd"><i id="cdbar"></i></div>
+      </div>`;
+    }
+    let t = '', s = '';
+    if (v.ph === 'defuse') { t = v.need === me ? 'Phew!' : `${oname} drew the Kaboom Cat!`; s = v.need === me ? 'Hide the Kaboom Cat.' : 'Tuna Time saved them. They are hiding it in the deck…'; }
+    else if (v.ph === 'favor') { t = v.need === me ? 'Big Eyes!' : `Waiting for ${oname}`; s = v.need === me ? 'Pick a card to give.' : 'They are choosing a card to give you.'; }
+    else if (v.ph === 'pick') { t = v.need === me ? 'Five different!' : `${oname} is digging`; s = v.need === me ? 'Take a card from the discard pile.' : 'They are picking from the discard pile.'; }
+    else if (v.ph === 'over') { t = v.win === me ? 'You win!' : 'Boom.'; s = ''; }
+    else if (v.turn === me) {
+      t = 'Your turn';
+      s = v.left > 1 ? `You have ${v.left} turns. Play cards, then draw.` : 'Play cards if you want, then draw to end your turn.';
+    } else {
+      t = `${oname}’s turn`;
+      s = v.left > 1 ? `${v.left} turns to go for them.` : 'Keep a Nope Paw ready.';
+    }
+    return `<p class="st-title ${v.turn === me && v.ph === 'play' ? 'me' : ''}">${t}</p><p class="st-sub">${s}</p>`;
+  }
+
+  function tableHTML(v) {
+    const me = v.you, op = 1 - me, oname = esc(v.names[op]);
+    const n = Math.min(v.oc, 12);
+    let fan = '';
+    for (let i = 0; i < n; i++) fan += `<span class="ob" style="--r:${((i - (n - 1) / 2) * 4).toFixed(1)}deg">${cardSVG('back')}</span>`;
+    const top = v.disc ? v.disc[v.disc.length - 1] : '';
+    const theirTurn = v.turn === op && v.ph !== 'over';
+    // hand stacks
+    const counts = {};
+    for (const c of v.hand) counts[c] = (counts[c] || 0) + 1;
+    const selCount = {};
+    for (const c of sel) selCount[c] = (selCount[c] || 0) + 1;
+    let hand = '';
+    for (const t of ORDER) if (counts[t]) {
+      const k = selCount[t] || 0;
+      hand += `<button class="stack ${k ? 'sel' : ''} ${counts[t] > 1 ? 'multi' : ''}" data-act="tap" data-t="${t}" aria-pressed="${k ? 'true' : 'false'}" aria-label="${NAMES[t]}, ${counts[t]} in hand${k ? ', ' + k + ' selected' : ''}">
+        ${counts[t] > 1 ? cardSVG(t, 'shadow') : ''}${cardSVG(t)}
+        ${counts[t] > 1 ? `<span class="badge">×${counts[t]}</span>` : ''}${k ? `<span class="pick">${k > 1 ? k : '✓'}</span>` : ''}
+      </button>`;
+    }
+    if (!hand) hand = `<p class="empty">No cards in hand.</p>`;
+    const logs = (v.log || []).slice(-3).map((e) => `<li>${logLine(v, e)}</li>`).join('');
+    return `<section class="table">
+      <div class="opp ${theirTurn ? 'active' : ''}">
+        <div class="who"><span class="nm">${oname}</span><span class="pill">${v.oc} card${v.oc === 1 ? '' : 's'}</span>${theirTurn ? '<span class="pill turn">their turn</span>' : ''}</div>
+        <div class="fan">${fan}</div>
+      </div>
+      <div class="mid">
+        <div class="pile"><div class="deckstack">${cardSVG('back', 'pc')}${v.dk > 1 ? cardSVG('back', 'pc under') : ''}</div><span class="cnt">${v.dk}</span><span class="lbl">Draw pile</span></div>
+        <div class="status">${statusHTML(v)}</div>
+        <div class="pile">${top ? cardSVG(top, 'pc') : '<div class="slot"></div>'}<span class="cnt">${v.disc.length}</span><span class="lbl">Discard</span></div>
+      </div>
+      <button class="log" data-act="log" aria-label="Show game log"><ol>${logs}</ol></button>
+      <div class="mine ${v.turn === me && v.ph !== 'over' ? 'active' : ''}">
+        <div class="hand" id="hand">${hand}</div>
+      </div>
+      <div class="bar">${barHTML(v)}</div>
+    </section>`;
+  }
+
+  function barHTML(v) {
+    const me = v.you, op = 1 - me, oname = esc(v.names[op]);
+    const info = focus && v.hand.includes(focus)
+      ? `<p class="info"><b>${NAMES[focus]}</b> <span class="role">${role(focus)}</span> ${desc(focus)}</p>`
+      : `<p class="info dim">Tap a card to see what it does. Tap again to select more of the same.</p>`;
+    let btns = '';
+    const dis = busy ? 'disabled' : '';
+    if (v.ph === 'pending' && v.pend) {
+      const responder = 1 - v.pend.last;
+      if (responder === me) {
+        const nN = v.hand.split('').filter((c) => c === 'N').length;
+        btns = `<button class="btn nope" data-act="nope" ${nN && !busy ? '' : 'disabled'}>Nope! <small>${nN}</small></button><button class="btn" data-act="pass" ${dis}>Let it happen</button>`;
+      } else btns = `<p class="waitline">Waiting to see if ${oname} Nopes…</p>`;
+    } else if (v.ph === 'play' && v.turn === me) {
+      const kind = selKind();
+      btns = `<button class="btn" data-act="play" ${kind && !busy ? '' : 'disabled'}>${playButtonLabel(kind)}</button><button class="btn hot" data-act="draw" ${dis}>Draw a card</button>`;
+    } else if (v.ph === 'play') {
+      btns = `<p class="waitline">${oname} is playing. You can still Nope their cards.</p>`;
+    } else btns = `<p class="waitline">…</p>`;
+    return info + `<div class="btns">${btns}</div>`;
+  }
+
+  function renderScreen() {
+    const el = $('#screen');
+    let key = screen;
+    if (screen === 'join') key += ':' + full + ':' + partnerHere + ':' + (Date.now() - lookStart > 8000);
+    if (screen === 'lobby') key += ':' + roomState;
+    if (screen === 'table') {
+      if (!V) return;
+      const sc = $('#hand');
+      const sx = sc ? sc.scrollLeft : 0;
+      el.innerHTML = tableHTML(V);
+      const nh = $('#hand');
+      if (nh) nh.scrollLeft = sx;
+      screenKey = 'table';
+      return;
+    }
+    if (key === screenKey) return;
+    screenKey = key;
+    if (screen === 'lobby') el.innerHTML = lobbyHTML();
+    else if (screen === 'hostwait') el.innerHTML = hostWaitHTML();
+    else if (screen === 'join') el.innerHTML = joinHTML();
+  }
+
+  // ---------- modals ----------
+  function sheet(title, body, cls) { return `<div class="sheet ${cls || ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">${body}</div>`; }
+  function modalSpec() {
+    if (local && local.k === 'rules') return { key: 'rules', html: rulesHTML() };
+    if (screen !== 'table' || !V) return null;
+    const v = V, me = v.you, oname = esc(v.names[1 - me]);
+    if (v.ph === 'over') {
+      const won = v.win === me;
+      const reveal = (v.ohand || '').split('').map((c) => cardSVG(c, 'mini')).join('') || '<span class="dim">No cards left.</span>';
+      return { key: 'over:' + v.gid + ':' + busy, html: sheet('Game over', `
+        <div class="boom ${won ? 'won' : 'lost'}">${cardSVG('E', 'bigcard')}<span class="burst">BOOM!</span></div>
+        <h2>${won ? 'You win!' : 'You exploded.'}</h2>
+        <p class="sub">${won ? `${oname} drew the Kaboom Cat with no Tuna Time left.` : `${oname} is the last cat standing.`}</p>
+        <p class="eyebrow ink">${oname} was holding</p><div class="row">${reveal}</div>
+        <div class="btns"><button class="btn hot" data-act="again" ${busy ? 'disabled' : ''}>Play again</button><button class="btn ghost ink" data-act="leave">Leave</button></div>`, 'over') };
+    }
+    if (v.ph === 'defuse' && v.need === me) {
+      const dk = v.dk;
+      defusePos = Math.max(0, Math.min(dk, defusePos));
+      return { key: 'defuse:' + v.gid + ':' + dk + ':' + busy, html: sheet('Hide the Kaboom Cat', `
+        <div class="duo">${cardSVG('E', 'mid')}${cardSVG('D', 'mid')}</div>
+        <h2>Close call!</h2>
+        <p class="sub">Tuna Time calmed the Kaboom Cat. Now hide it in the draw pile. ${oname} won’t see where.</p>
+        <label class="slab" for="dpos">Position: <b id="dposl">${posLabel(defusePos, dk)}</b></label>
+        <input type="range" id="dpos" min="0" max="${dk}" step="1" value="${defusePos}">
+        <div class="quick"><button class="chipbtn" data-act="dq" data-p="0">Top</button><button class="chipbtn" data-act="dq" data-p="1">2nd</button><button class="chipbtn" data-act="dq" data-p="rand">Random</button><button class="chipbtn" data-act="dq" data-p="${dk}">Bottom</button></div>
+        <div class="btns one"><button class="btn hot" data-act="hide" ${busy ? 'disabled' : ''}>Hide it here</button></div>`) };
+    }
+    if (v.ph === 'favor' && v.need === me) {
+      const grid = uniqueOf(v.hand).map((c) => `<button class="pickcard" data-act="give" data-t="${c}" ${busy ? 'disabled' : ''}>${cardSVG(c)}</button>`).join('');
+      return { key: 'favor:' + v.gid + ':' + v.hand + ':' + busy, html: sheet('Give a card', `<h2>${oname} played Big Eyes</h2><p class="sub">Pick one card to give them.</p><div class="grid">${grid}</div>`) };
+    }
+    if (v.ph === 'pick' && v.need === me) {
+      const grid = uniqueOf(v.disc).filter((c) => c !== 'E').map((c) => `<button class="pickcard" data-act="pickd" data-t="${c}" ${busy ? 'disabled' : ''}>${cardSVG(c)}</button>`).join('');
+      return { key: 'pick:' + v.gid + ':' + v.disc + ':' + busy, html: sheet('Take from discard', `<h2>Five different!</h2><p class="sub">Take any card from the discard pile.</p><div class="grid">${grid}</div>`) };
+    }
+    if (v.peek && v.peek.id > seenPeek) {
+      const cards = v.peek.cards.split('');
+      const row = cards.map((c, i) => `<figure>${cardSVG(c, 'mid')}<figcaption>${['Next', '2nd', '3rd'][i]}</figcaption></figure>`).join('');
+      return { key: 'peek:' + v.peek.id, html: sheet('See the future', `<h2>Top of the draw pile</h2><p class="sub">Only you can see this. ${cards.includes('E') ? 'Careful.' : 'No Kaboom Cat in sight.'}</p><div class="row three">${row || '<span class="dim">The pile is empty.</span>'}</div><div class="btns one"><button class="btn hot" data-act="seen">Got it</button></div>`) };
+    }
+    if (local && local.k === 'triple') {
+      const grid = ORDER.split('').map((c) => `<button class="pickcard" data-act="name" data-t="${c}">${cardSVG(c)}</button>`).join('');
+      return { key: 'triple', html: sheet('Name a card', `<h2>Name a card</h2><p class="sub">If ${oname} has it, you take it.</p><div class="grid">${grid}</div><div class="btns one"><button class="btn ghost ink" data-act="close">Cancel</button></div>`) };
+    }
+    if (local && local.k === 'log') {
+      const items = (v.log || []).map((e) => `<li>${logLine(v, e)}</li>`).reverse().join('');
+      return { key: 'log:' + (v.log || []).length + ':' + JSON.stringify(v.log && v.log[v.log.length - 1]), html: sheet('Game log', `<h2>What happened</h2><ol class="fulllog">${items || '<li>Nothing yet.</li>'}</ol><div class="btns one"><button class="btn ghost ink" data-act="close">Close</button></div>`) };
+    }
+    return null;
+  }
+  function posLabel(p, dk) {
+    if (dk === 0) return 'the only card';
+    if (p === 0) return 'Top (drawn next)';
+    if (p >= dk) return 'Bottom';
+    return `${p + 1}${['st', 'nd', 'rd'][p] || 'th'} from the top`;
+  }
+  const uniqueOf = (s) => ORDER.split('').filter((c) => s.includes(c));
+  function rulesHTML() {
+    const row = (t) => `<li>${cardSVG(t, 'tiny')}<div><b>${NAMES[t]}</b> <span class="role">${role(t)}</span><br>${desc(t)}</div></li>`;
+    return sheet('How to play', `<h2>How to play</h2>
+      <p class="sub">Don’t explode. If you draw the Kaboom Cat and have no Tuna Time, you lose.</p>
+      <ol class="steps"><li>On your turn, play as many cards as you like, or none.</li><li>Then draw one card. That ends your turn.</li><li>When anyone plays a card, the other player has a few seconds to Nope it.</li></ol>
+      <p class="sub">Each player starts with 1 Tuna Time and 7 random cards. One Kaboom Cat and two Tuna Time are shuffled into the draw pile.</p>
+      <ul class="rules">${['E', 'D', 'N', 'A', 'S', 'F', 'H', 'P'].map(row).join('')}
+      <li>${cardSVG('1', 'tiny')}<div><b>Combos</b> <span class="role">any matching cards</span><br>2 matching cards: steal a random card. 3 matching: name a card and take it if they have it. 5 different cards: take any card from the discard pile. Kaboom Cat and Tuna Time can’t be used in combos.</div></li></ul>
+      <div class="btns one"><button class="btn hot" data-act="close">Got it</button></div>`, 'tall');
+  }
+  function renderModal() {
+    const spec = modalSpec();
+    const m = $('#modal');
+    if (!spec) { if (modalKey) { m.hidden = true; m.innerHTML = ''; modalKey = ''; } return; }
+    if (spec.key === modalKey) return;
+    modalKey = spec.key;
+    m.innerHTML = spec.html;
+    m.hidden = false;
+  }
+
+  // ---------- countdown + toast ----------
+  function tickCountdown() {
+    const b = document.getElementById('cdbar');
+    if (!b) return;
+    const rem = Math.max(0, pendEnd - Date.now());
+    b.style.width = (100 * rem / WIN).toFixed(1) + '%';
+  }
+  let toastT = 0;
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toastT);
+    toastT = setTimeout(() => { t.hidden = true; }, 2800);
+  }
+
+  // ---------- input ----------
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'name') { myName = clean(e.target.value); store.set('bw-name', myName); }
+    if (e.target.id === 'code') e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (e.target.id === 'dpos') { defusePos = Number(e.target.value); const l = $('#dposl'); if (l && V) l.textContent = posLabel(defusePos, V.dk); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'code') { e.preventDefault(); const b = $('[data-act="join"]'); if (b) b.click(); }
+    if (e.key === 'Escape' && local) { local = null; render(); }
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.disabled) return;
+    const a = b.dataset.act, t = b.dataset.t;
+    switch (a) {
+      case 'host': myName = clean(($('#name') || {}).value) || myName; store.set('bw-name', myName); hostStart(null); break;
+      case 'join': {
+        myName = clean(($('#name') || {}).value) || myName; store.set('bw-name', myName);
+        const c = (($('#code') || {}).value || '').toUpperCase();
+        if (!/^[A-Z0-9]{4}$/.test(c)) { toast('Type the 4-character code from your friend.'); return; }
+        guestJoin(c);
+        break;
+      }
+      case 'resume': { const r = store.get('bw-host'); if (r) hostStart(r); break; }
+      case 'rejoin': { const r = store.get('bw-guest'); if (r) guestJoin(r.code); break; }
+      case 'leave': leave(); break;
+      case 'copy': {
+        const done = () => toast('Code copied');
+        try { navigator.clipboard.writeText(code).then(done, () => toast('Copy did not work. The code is ' + code)); } catch (err) { toast('The code is ' + code); }
+        break;
+      }
+      case 'rules': local = { k: 'rules' }; render(); break;
+      case 'log': local = { k: 'log' }; render(); break;
+      case 'close': local = null; render(); break;
+      case 'tap': {
+        if (!V) return;
+        const have = V.hand.split('').filter((c) => c === t).length;
+        const k = sel.filter((c) => c === t).length;
+        focus = t;
+        if (k < have) sel.push(t);
+        else sel = sel.filter((c) => c !== t);
+        render();
+        break;
+      }
+      case 'play': {
+        const kind = selKind();
+        if (!kind) return;
+        if (kind === 'triple') { local = { k: 'triple' }; render(); return; }
+        doAct({ t: 'play', cards: sel.join('') });
+        break;
+      }
+      case 'name': doAct({ t: 'play', cards: sel.join(''), named: t }); break;
+      case 'draw': focus = null; doAct({ t: 'draw' }); break;
+      case 'nope': doAct({ t: 'nope' }); break;
+      case 'pass': doAct({ t: 'pass' }); break;
+      case 'dq': {
+        const dk = V ? V.dk : 0;
+        defusePos = b.dataset.p === 'rand' ? Math.floor(Math.random() * (dk + 1)) : Math.min(dk, Number(b.dataset.p));
+        const r = $('#dpos'); if (r) r.value = defusePos;
+        const l = $('#dposl'); if (l) l.textContent = posLabel(defusePos, dk);
+        break;
+      }
+      case 'hide': doAct({ t: 'defuseAt', pos: defusePos }); defusePos = 0; break;
+      case 'give': doAct({ t: 'give', card: t }); break;
+      case 'pickd': doAct({ t: 'pick', card: t }); break;
+      case 'seen': if (V && V.peek) seenPeek = V.peek.id; render(); break;
+      case 'again': doAct({ t: 'again' }); break;
+    }
+  });
+
+  // ---------- timers ----------
+  setInterval(() => {
+    if (mode === 'host' && G && Engine.tick(G, Date.now())) commit();
+    tickCountdown();
+    if (screen === 'join') renderScreen();
+  }, 150);
+  document.addEventListener('visibilitychange', () => { if (mode === 'host' && G && Engine.tick(G, Date.now())) commit(); });
+
+  // ---------- boot ----------
+  function boot() {
+    document.body.insertAdjacentHTML('afterbegin', Art.sprite());
+    render();
+    const use = window.BW_ROOM ? Promise.resolve(window.BW_ROOM()) : window.claude && typeof window.claude.use === 'function' ? window.claude.use('room') : Promise.resolve(null);
+    Promise.resolve(use).then((r) => {
+      room = r;
+      roomState = r ? (r.connected() ? 'on' : 'connecting') : 'off';
+      if (!r) { screenKey = ''; render(); return; }
+      const onErr = () => { roomState = 'off'; screenKey = ''; render(); };
+      if (r.onIssue) r.onIssue((t) => {
+        if (t === 'code-taken' && mode === 'host' && !G) { code = newCode(); screenKey = ''; commit(); }
+        else if (t === 'server') toast('Can’t reach the matchmaking server. Retrying…');
+        else if (t === 'ice-failed') toast('Your networks are blocking a direct connection. Try switching one phone to mobile data or another Wi-Fi.');
+        else if (t === 'browser') toast('This browser can’t make direct connections. Try Chrome or Safari.');
+      });
+      r.onConnection((c) => {
+        const ns = c ? 'on' : (roomState === 'off' ? 'off' : 'connecting');
+        if (ns !== roomState) { roomState = ns; screenKey = ''; }
+        if (c && mode === 'host') hostPublish();
+        if (c && mode === 'guest') guestPublish();
+        render();
+      }, onErr);
+      r.onPeers(() => {
+        if (mode === 'host') hostOnPeers();
+        else if (mode === 'guest') guestOnPeers();
+      }, onErr);
+      // connected() can be false for a moment at load; allow starting anyway after a short wait
+      setTimeout(() => { if (roomState === 'connecting' && room) { roomState = 'on'; screenKey = ''; render(); } }, 3000);
+      screenKey = '';
+      render();
+    }, () => { roomState = 'off'; screenKey = ''; render(); });
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
