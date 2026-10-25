@@ -798,8 +798,9 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     const same = cards.split('').every((c) => c === cards[0]);
     const special = /[ED]/.test(cards);
     if (special) return null;
-    if (cards.length === 2 && same) return 'pair';
-    if (cards.length === 3 && same) return 'triple';
+    const cat = '12345'.includes(cards[0]);
+    if (cards.length === 2 && same && cat) return 'pair'; // pairs and triples: cat cards only
+    if (cards.length === 3 && same && cat) return 'triple';
     if (cards.length === 5 && new Set(cards.split('')).size === 5) return 'five';
     return null;
   }
@@ -1016,7 +1017,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   const WIN = Engine.WINDOW;
   const NAMES = { E: 'Kaboom Cat', D: 'Tuna Time', N: 'Nope Paw', A: 'Pounce', S: 'Nap Time', F: 'Big Eyes', H: 'Zoomies', P: 'Fortune Cat', '1': 'Sir Tuxedo', '2': 'Marmalade', '3': 'Calico Jo', '4': 'Smokey', '5': 'Siamese Sue' };
   const ROLE = { E: 'Exploding cat', D: 'Defuse', N: 'Nope', A: 'Attack', S: 'Skip', F: 'Favor', H: 'Shuffle', P: 'See the Future' };
-  const COMBO_TEXT = 'Does nothing alone. Play 2 matching cards to steal a random card, 3 matching to name a card and take it, or 5 different cards to take any card from the discard pile.';
+  const COMBO_TEXT = 'Cat card. Does nothing alone. Play 2 matching cats to steal a random card, 3 matching cats to name a card and take it, or 5 different cards to take any card from the discard pile.';
   const TEXT = {
     E: 'Draw this and you explode, unless you have a Tuna Time to calm it down.',
     D: 'Used automatically when you draw the Kaboom Cat. Then you secretly hide the Kaboom Cat anywhere in the draw pile. Cannot be Noped.',
@@ -1574,7 +1575,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       <ol class="steps"><li>On your turn, play as many cards as you like, or none.</li><li>Then draw one card. That ends your turn.</li><li>When anyone plays a card, the other player has 30 seconds to Nope it, or can tap “Let it happen” to skip the wait.</li></ol>
       <p class="sub">Each player starts with 1 Tuna Time and 7 random cards. One Kaboom Cat and two Tuna Time are shuffled into the draw pile.</p>
       <ul class="rules">${['E', 'D', 'N', 'A', 'S', 'F', 'H', 'P'].map(row).join('')}
-      <li>${cardSVG('1', 'tiny')}<div><b>Combos</b> <span class="role">any matching cards</span><br>2 matching cards: steal a random card. 3 matching: name a card and take it if they have it. 5 different cards: take any card from the discard pile. Kaboom Cat and Tuna Time can’t be used in combos.</div></li></ul>
+      <li>${cardSVG('1', 'tiny')}<div><b>Combos</b> <span class="role">cat cards</span><br>2 matching cat cards: steal a random card. 3 matching cat cards: name a card and take it if they have it. 5 cards with different names (any mix): take any card from the discard pile. Kaboom Cat and Tuna Time can’t be used in combos.</div></li></ul>
       <div class="btns one"><button class="btn hot" data-act="close">Got it</button></div>`, 'tall');
   }
   function renderModal() {
