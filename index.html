@@ -126,6 +126,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 .joinrow { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 .joinrow .btn { padding-inline: 22px; }
 .warn { background: #4d1f1a; color: #ffd2c9; border-radius: 12px; padding: 10px 14px; margin: 0; max-width: 360px; font-size: 14px; }
+.notice { margin: 0; padding: 6px 12px; border-radius: 12px; background: #4d3b14; color: var(--mustard); font-size: 13px; font-weight: 600; text-align: center; }
 .fine { color: var(--muted); font-size: 13px; margin: 0; }
 .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 0; }
 .eyebrow.ink { color: #6d6488; margin-top: 10px; }
@@ -273,7 +274,9 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 <script>// Phone-to-phone connection over PeerJS, shaped like the small "room" API the game uses:
 // presence(obj) shares your state, peers() lists everyone, onPeers/onConnection notify changes.
 (function () {
-  window.BW_STANDALONE = true;
+  // Optional TURN relay for networks that block direct connections, e.g.
+  // { urls: 'turn:relay.example.com:443?transport=tcp', username: '…', credential: '…' }
+  const TURN = [];
   window.BW_ROOM = function () {
     if (typeof window.Peer !== 'function') return null;
     const PREFIX = 'boomwhiskers-v1-';
@@ -330,7 +333,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       myRole = role; myCode = code;
       const opts = Object.assign({
         debug: 0,
-        config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }] }
+        config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }].concat(TURN) }
       }, window.BW_PEER_OPTS || {});
       const p = role === 'host' ? new window.Peer(PREFIX + code.toLowerCase(), opts) : new window.Peer(opts);
       peer = p;
@@ -835,7 +838,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
         if (!h.length) { note(G, other, 'empty'); break; }
         const c = h.splice(Math.floor(rnd() * h.length), 1)[0];
         G.hands[me].push(c);
-        note(G, me, 'steal', c, me);
+        note(G, me, 'steal', c); // both players know the card: one gained it, one lost it
         break;
       }
       case 'triple': {
@@ -853,6 +856,10 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 
   const needsAct = (G) => G.ph === 'play' || G.ph === 'defuse' || G.ph === 'favor' || G.ph === 'pick';
   const actor = (G) => (G.ph === 'play' ? G.turn : G.need);
+  // Stops a seat's move clock from running down, e.g. while that player is disconnected.
+  function hold(G, seat, ms) {
+    if (G.deadline != null && needsAct(G) && actor(G) === seat) G.deadline += ms;
+  }
   function arm(G, now) { G.deadline = needsAct(G) ? now + TURN_MS : null; }
 
   // Applies one action from a seat and restarts the move clock. Returns {ok} or {err}.
@@ -1007,11 +1014,11 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     return v;
   }
 
-  const Engine = { WINDOW, TURN_MS, COUNTS, newGame, dispatch, tick, viewFor, comboKind, sortHand, shuffle };
+  const Engine = { WINDOW, TURN_MS, COUNTS, newGame, dispatch, tick, hold, actor, needsAct, viewFor, comboKind, sortHand, shuffle };
   if (typeof module !== 'undefined') module.exports = Engine; else root.Engine = Engine;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
-<script>// Boom Whiskers app: lobby, table UI, and live play over the artifact room.
+<script>// Boom Whiskers app: lobby, table UI, and live play over the PeerJS room.
 (function () {
   const $ = (s, r) => (r || document).querySelector(s);
   const WIN = Engine.WINDOW;
@@ -1080,6 +1087,8 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     const v = Engine.viewFor(G, seat, Date.now());
     v.chat = (G.chat || []).slice(-12);
     v.chatAck = G.chatN || 0;
+    // The guest's clock stands still while they are disconnected.
+    v.paused = !partnerHere && Engine.needsAct(G) && Engine.actor(G) === 1;
     return v;
   }
   function addChat(seat, text) {
@@ -1105,7 +1114,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (!V || V.gid !== nv.gid) { seenPeek = nv.peek ? (V ? 0 : nv.peek.id) : 0; sel = []; }
     V = nv;
     pendEnd = V.pend ? Date.now() + V.pend.rem : 0;
-    clockEnd = V.dl != null ? Date.now() + V.dl : 0;
+    clockEnd = V.dl != null && !V.paused ? Date.now() + V.dl : 0;
     const have = V.hand.split('');
     sel = sel.filter((c) => { const i = have.indexOf(c); if (i < 0) return false; have.splice(i, 1); return true; });
   }
@@ -1243,7 +1252,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       case 'shuffle': return `${W} shuffled the draw pile.`;
       case 'peek': return `${W} peeked at the top 3 cards.`;
       case 'empty': return `${W} had no cards to give.`;
-      case 'steal': return you ? `You stole ${c === '?' ? 'a card' : NAMES[c]}.` : `${W} stole a card from you.`;
+      case 'steal': return you ? `You stole ${NAMES[c] || 'a card'}.` : `${W} stole ${NAMES[c] || 'a card'} from you.`;
       case 'hit': return `${W} took ${NAMES[c]}${you ? '' : ' from you'}.`;
       case 'miss': return `${O} had no ${NAMES[c]}.`;
       case 'draw': return you ? `You drew ${c === '?' ? 'a card' : NAMES[c]}.` : `${W} drew a card.`;
@@ -1293,6 +1302,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     ex.hidden = !mode;
     ex.textContent = mode === 'host' ? 'Close room' : 'Leave';
     $('#app').classList.toggle('ingame', !!mode);
+    keepAwake();
   }
 
   function lobbyHTML() {
@@ -1304,7 +1314,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (fresh(res) && res.G && res.G.ph !== 'over') resume = `<button class="btn ghost" data-act="resume">Resume hosting game ${esc(res.code)}</button>`;
     else if (fresh(gres)) resume = `<button class="btn ghost" data-act="rejoin">Rejoin game ${esc(gres.code)}</button>`;
     let warn = '';
-    if (roomState === 'off') warn = window.BW_STANDALONE ? `<p class="warn">The connection library didn’t load. Check your internet connection and reload the page.</p>` : `<p class="warn">Live play is not available in this view. Open this page in Claude, signed in, from the link you were shared.</p>`;
+    if (roomState === 'off') warn = `<p class="warn">The connection library didn’t load. Check your internet connection and reload the page.</p>`;
     else if (roomState === 'connecting') warn = `<p class="fine">Connecting to the table…</p>`;
     return `<section class="lobby">
       <div class="hero" aria-hidden="true">${cardSVG('D', 'h1')}${cardSVG('E', 'h2')}${cardSVG('N', 'h3')}</div>
@@ -1342,7 +1352,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       <div class="bigcode">${esc(code)}</div>
       ${full ? `<p class="warn">Someone else already joined this game. Ask your friend to start a new one.</p>` :
         `<div class="paws" aria-hidden="true"><i></i><i></i><i></i></div>
-      <p class="lede" id="joinmsg">${partnerHere ? 'Found it. Dealing the cards…' : slow ? (window.BW_STANDALONE ? 'Still looking. Check the code and make sure your friend’s game is open. If it never connects, one of your networks may block direct connections: try mobile data or another Wi-Fi.' : 'Still looking. Check the code, and make sure your friend has the game open on their phone.') : 'Looking for your friend’s game…'}</p>`}
+      <p class="lede" id="joinmsg">${partnerHere ? 'Found it. Dealing the cards…' : slow ? 'Still looking. Check the code and make sure your friend’s game is open. If it never connects, one of your networks may block direct connections: try mobile data or another Wi-Fi.' : 'Looking for your friend’s game…'}</p>`}
       <button class="link" data-act="leave">Cancel</button>
     </section>`;
   }
@@ -1373,6 +1383,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (v.dl == null) return '';
     const act = v.ph === 'play' ? v.turn : v.need;
     const label = act === v.you ? 'Your time' : esc(v.names[act]) + '’s time';
+    if (v.paused) return `<p class="clock">${label} <b>paused</b></p>`;
     return `<p class="clock">${label} <b class="clockv">${Math.ceil(v.dl / 1000)}s</b></p>`;
   }
   function closedHTML() {
@@ -1434,7 +1445,12 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     }
     if (!hand) hand = `<p class="empty">No cards in hand.</p>`;
     const logs = (v.log || []).slice(-3).map((e) => `<li>${logLine(v, e)}</li>`).join('');
+    let away = '';
+    if (!partnerHere && v.ph !== 'over') away = `<p class="notice">${mode === 'host'
+      ? `${oname} lost connection. Their clock is paused until they come back.`
+      : `Can’t reach ${oname}. Their screen may be off. The game carries on when they’re back.`}</p>`;
     return `<section class="table">
+      ${away}
       <div class="opp ${theirTurn ? 'active' : ''}">
         <div class="who"><span class="nm">${oname}</span><span class="pill">${v.oc} card${v.oc === 1 ? '' : 's'}</span>${theirTurn ? '<span class="pill turn">their turn</span>' : ''}</div>
         <div class="fan">${fan}</div>
@@ -1576,7 +1592,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       <p class="sub">Each player starts with 1 Tuna Time and 7 random cards. One Kaboom Cat and two Tuna Time are shuffled into the draw pile.</p>
       <ul class="rules">${['E', 'D', 'N', 'A', 'S', 'F', 'H', 'P'].map(row).join('')}
       <li>${cardSVG('1', 'tiny')}<div><b>Combos</b> <span class="role">cat cards</span><br>2 matching cat cards: steal a random card. 3 matching cat cards: name a card and take it if they have it. 5 cards with different names (any mix): take any card from the discard pile. Kaboom Cat and Tuna Time can’t be used in combos.</div></li></ul>
-      <div class="btns one"><button class="btn hot" data-act="close">Got it</button></div>`, 'tall');
+      <div class="btns one"><button class="btn hot" data-act="close">Got it</button></div>`);
   }
   function renderModal() {
     const spec = modalSpec();
@@ -1703,19 +1719,41 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   });
 
   // ---------- timers ----------
+  let lastTick = Date.now();
+  function hostTick() {
+    const now = Date.now();
+    if (mode === 'host' && G) {
+      if (!partnerHere) Engine.hold(G, 1, now - lastTick);
+      if (Engine.tick(G, now)) commit();
+    }
+    lastTick = now;
+  }
   setInterval(() => {
-    if (mode === 'host' && G && Engine.tick(G, Date.now())) commit();
+    hostTick();
     tickCountdown();
     if (screen === 'join') renderScreen();
   }, 150);
-  document.addEventListener('visibilitychange', () => { if (mode === 'host' && G && Engine.tick(G, Date.now())) commit(); });
+  document.addEventListener('visibilitychange', () => { hostTick(); keepAwake(); });
+
+  // Keep the screen on while in a game: a locked phone drops the connection, and the host's phone runs the game.
+  let wakeLock = null, wakeAsk = false;
+  function keepAwake() {
+    const want = !!mode && document.visibilityState === 'visible';
+    if (want && !wakeLock && !wakeAsk && navigator.wakeLock) {
+      wakeAsk = true;
+      navigator.wakeLock.request('screen').then((l) => {
+        wakeAsk = false; wakeLock = l;
+        l.addEventListener('release', () => { if (wakeLock === l) wakeLock = null; });
+        if (!mode) keepAwake();
+      }, () => { wakeAsk = false; });
+    } else if (!want && wakeLock) { const l = wakeLock; wakeLock = null; l.release().catch(() => { }); }
+  }
 
   // ---------- boot ----------
   function boot() {
     document.body.insertAdjacentHTML('afterbegin', Art.sprite());
     render();
-    const use = window.BW_ROOM ? Promise.resolve(window.BW_ROOM()) : window.claude && typeof window.claude.use === 'function' ? window.claude.use('room') : Promise.resolve(null);
-    Promise.resolve(use).then((r) => {
+    Promise.resolve(window.BW_ROOM()).then((r) => {
       room = r;
       roomState = r ? (r.connected() ? 'on' : 'connecting') : 'off';
       if (!r) { screenKey = ''; render(); return; }
