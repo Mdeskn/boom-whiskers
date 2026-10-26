@@ -271,93 +271,202 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
 <div id="modal" hidden></div>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script>// Phone-to-phone connection over PeerJS, shaped like the small "room" API the game uses:
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script>// Phone-to-phone connection, shaped like the small "room" API the game uses:
 // presence(obj) shares your state, peers() lists everyone, onPeers/onConnection notify changes.
+// Phones talk directly over PeerJS (WebRTC) when they can. When they can't, for example when one is on
+// mobile data, messages go through free public MQTT brokers instead. Neither needs an account.
 (function () {
   // Optional TURN relay for networks that block direct connections, e.g.
   // { urls: 'turn:relay.example.com:443?transport=tcp', username: '…', credential: '…' }
   const TURN = [];
+  // Fallback relays. Both are used at once, so the game keeps working if one is down.
+  const RELAYS = ['wss://broker.hivemq.com:8884/mqtt', 'wss://broker.emqx.io:8084/mqtt'];
+  const BEAT = 8000; // ms between relay heartbeats
+  const EXPIRE = 25000; // ms without a relay heartbeat before a player counts as gone
   window.BW_ROOM = function () {
-    if (typeof window.Peer !== 'function') return null;
+    const hasPeer = typeof window.Peer === 'function';
+    const hasRelay = !!(window.mqtt && typeof window.mqtt.connect === 'function');
+    if (!hasPeer && !hasRelay) return null;
     const PREFIX = 'boomwhiskers-v1-';
-    let mine = {}, peer = null, myRole = null, myCode = null, online = true, retryT = 0;
-    const conns = new Map();
+    let mine = {}, seq = 0, rid = null, peer = null, peerUp = false, myRole = null, myCode = null;
+    let online = true, retryT = 0, tries = 0, relays = [], topic = '';
+    const conns = new Map(); // PeerJS id -> direct connection
+    const others = new Map(); // other player's session id -> { presence, s, conn, relayAt, heard, alive }
     const peerHandlers = [], connHandlers = [], issueHandlers = [];
 
+    // A player is here if we have an open direct line to them, or heard from them on a relay recently.
+    const alive = (e) => !!e.presence && (!!(e.conn && e.conn.open) || Date.now() - e.relayAt < EXPIRE);
     function peers() {
       const list = [{ peer: 'me', isMe: true, sameTab: true, presence: mine }];
-      for (const r of conns.values()) if (r.presence && r.conn.open) list.push({ peer: r.conn.peer, isMe: false, sameTab: false, presence: r.presence });
+      const live = Array.from(others.entries()).filter(([, e]) => alive(e)).sort((a, b) => b[1].heard - a[1].heard);
+      for (const [id, e] of live) list.push({ peer: id, isMe: false, sameTab: false, presence: e.presence });
       return list;
     }
     const emitPeers = () => { const ps = peers(); setTimeout(() => peerHandlers.forEach((h) => h({ peers: ps })), 0); };
     const setOnline = (v) => { if (v !== online) { online = v; connHandlers.forEach((h) => h(v)); } };
+    const relayUp = () => relays.some((c) => c.connected);
+    const updateOnline = () => setOnline(!rid || peerUp || relayUp());
     const issue = (type) => issueHandlers.forEach((h) => h(type));
-    function send(r) { if (r.conn.open) { try { r.conn.send({ t: 'p', p: mine }); } catch (e) { } } }
+
+    // Use the relay until every other player has an open direct line.
+    function needRelay() {
+      const live = Array.from(others.values()).filter(alive);
+      return !live.length || live.some((e) => !(e.conn && e.conn.open));
+    }
+    function publishRelay(msg) {
+      const s = JSON.stringify(msg);
+      for (const c of relays) if (c.connected) { try { c.publish(topic, s); } catch (e) { } }
+    }
+    function sendAll() {
+      if (!rid) return;
+      const msg = { t: 'p', id: rid, s: seq, p: mine };
+      for (const c of conns.values()) if (c.open) { try { c.send(msg); } catch (e) { } }
+      if (needRelay()) publishRelay(msg);
+    }
+    function receive(d, conn) {
+      if (!rid || !d || typeof d.id !== 'string' || d.id === rid) return;
+      let e = others.get(d.id);
+      if (d.t === 'bye') { // may come from just one relay, so only forget the relay route
+        if (e) { e.relayAt = 0; if (alive(e) !== e.alive) { e.alive = !e.alive; emitPeers(); } }
+        return;
+      }
+      if (d.t !== 'p' || typeof d.s !== 'number' || !d.p || typeof d.p !== 'object' || Array.isArray(d.p)) return;
+      const fresh = !e;
+      if (fresh) { e = { presence: null, s: -1, conn: null, relayAt: 0, heard: 0, alive: false }; others.set(d.id, e); }
+      if (conn) e.conn = conn; else e.relayAt = Date.now();
+      e.heard = Date.now();
+      let changed = false;
+      if (d.s > e.s) { e.s = d.s; e.presence = d.p; changed = true; } // the same message can arrive by several routes
+      if (alive(e) !== e.alive) { e.alive = !e.alive; changed = true; }
+      if (fresh) sendAll(); // let a newcomer see us right away
+      if (changed) emitPeers();
+    }
 
     function wire(conn) {
-      const r = { conn, presence: null };
-      conns.set(conn.peer, r);
-      conn.on('open', () => { send(r); emitPeers(); });
-      conn.on('data', (d) => {
-        if (d && d.t === 'p' && d.p && typeof d.p === 'object' && !Array.isArray(d.p)) { r.presence = d.p; emitPeers(); }
-      });
+      conns.set(conn.peer, conn);
+      conn.on('open', () => { tries = 0; try { conn.send({ t: 'p', id: rid, s: seq, p: mine }); } catch (e) { } });
+      conn.on('data', (d) => receive(d, conn));
       conn.on('close', () => {
-        if (conns.get(conn.peer) === r) conns.delete(conn.peer);
+        const mineNow = conns.get(conn.peer) === conn;
+        if (mineNow) conns.delete(conn.peer);
+        for (const e of others.values()) if (e.conn === conn) e.conn = null;
+        sendAll(); // carry on over the relay
         emitPeers();
-        if (myRole === 'guest') scheduleRetry(1500);
+        if (mineNow && myRole === 'guest') scheduleRetry(1500);
       });
       conn.on('error', () => { });
-      conn.on('iceStateChanged', (s) => { if (s === 'failed') issue('ice-failed'); });
+      conn.on('iceStateChanged', (s) => { if (s === 'failed' && !relayUp()) issue('ice-failed'); });
     }
     function connectHost() {
       if (!peer || peer.destroyed || myRole !== 'guest' || !peer.open) return;
-      for (const [k, r] of conns) { if (r.conn.open) return; try { r.conn.close(); } catch (e) { } conns.delete(k); }
+      for (const [k, c] of conns) { if (c.open) return; conns.delete(k); try { c.close(); } catch (e) { } }
       wire(peer.connect(PREFIX + myCode.toLowerCase(), { reliable: true, serialization: 'json' }));
-      scheduleRetry(6000); // if it never opens, try again
+      tries += 1;
+      scheduleRetry(Math.min(30000, 6000 * tries)); // if it never opens, try again, less often each time
     }
     function scheduleRetry(ms) { clearTimeout(retryT); retryT = setTimeout(connectHost, ms); }
-    function teardown() {
-      clearTimeout(retryT);
-      for (const r of conns.values()) { try { r.conn.close(); } catch (e) { } }
-      conns.clear();
-      if (peer) { try { peer.destroy(); } catch (e) { } }
-      peer = null; myRole = null; myCode = null;
-      setOnline(true);
-      emitPeers();
-    }
-    function ensure() {
-      const role = mine.role, code = mine.g;
-      if (!role || !code) { if (peer) teardown(); return; }
-      if (peer && role === myRole && code === myCode) return;
-      teardown();
-      myRole = role; myCode = code;
+
+    function startPeer(role, code) {
       const opts = Object.assign({
         debug: 0,
         config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }].concat(TURN) }
       }, window.BW_PEER_OPTS || {});
       const p = role === 'host' ? new window.Peer(PREFIX + code.toLowerCase(), opts) : new window.Peer(opts);
       peer = p;
-      setOnline(false);
-      p.on('open', () => { if (p !== peer) return; setOnline(true); if (role === 'guest') connectHost(); });
+      const down = (ms) => {
+        peerUp = false; updateOnline();
+        setTimeout(() => { try { if (p === peer && !p.destroyed) p.reconnect(); } catch (e) { } }, ms);
+      };
+      p.on('open', () => { if (p !== peer) return; peerUp = true; updateOnline(); if (role === 'guest') connectHost(); });
       p.on('connection', (conn) => { if (p !== peer || myRole !== 'host') { try { conn.close(); } catch (e) { } return; } wire(conn); });
-      p.on('disconnected', () => { if (p !== peer || p.destroyed) return; setOnline(false); setTimeout(() => { try { if (!p.destroyed) p.reconnect(); } catch (e) { } }, 1500); });
+      p.on('disconnected', () => { if (p !== peer || p.destroyed) return; down(1500); });
       p.on('error', (err) => {
         if (p !== peer) return;
         const t = err && err.type;
-        if (t === 'peer-unavailable') { scheduleRetry(2500); return; }
+        if (t === 'peer-unavailable') { scheduleRetry(Math.min(30000, 2500 * Math.max(1, tries))); return; }
         if (t === 'unavailable-id') { issue('code-taken'); return; }
-        if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') { setOnline(false); issue('server'); setTimeout(() => { try { if (p === peer && !p.destroyed) p.reconnect(); } catch (e) { } }, 3000); return; }
-        if (t === 'browser-incompatible') { issue('browser'); return; }
+        if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') {
+          down(3000);
+          setTimeout(() => { if (p === peer && !peerUp && !relayUp()) issue('server'); }, 4000);
+          return;
+        }
+        if (t === 'browser-incompatible' && !hasRelay) issue('browser');
       });
     }
+    function startRelay(code) {
+      topic = 'boomwhiskers/v1/' + code.toLowerCase();
+      // If this phone drops off without saying goodbye, the broker says it for us.
+      const will = { topic, payload: JSON.stringify({ t: 'bye', id: rid }), qos: 0, retain: false };
+      relays = RELAYS.map((url) => {
+        let c;
+        try {
+          c = window.mqtt.connect(url, { clientId: 'bw-' + rid + '-' + Math.random().toString(36).slice(2, 6), protocolVersion: 4, clean: true, keepalive: 20, reconnectPeriod: 4000, connectTimeout: 10000, will });
+        } catch (e) { return null; }
+        c.on('connect', () => {
+          if (!relays.includes(c)) return;
+          c.subscribe(topic);
+          if (needRelay()) c.publish(topic, JSON.stringify({ t: 'p', id: rid, s: seq, p: mine }));
+          updateOnline();
+        });
+        c.on('message', (t, buf) => {
+          if (!relays.includes(c) || t !== topic) return;
+          let d;
+          try { d = JSON.parse(String(buf)); } catch (e) { return; }
+          receive(d, null);
+        });
+        c.on('close', () => { if (relays.includes(c)) updateOnline(); });
+        c.on('error', () => { });
+        return c;
+      }).filter(Boolean);
+    }
+
+    function teardown() {
+      clearTimeout(retryT);
+      if (rid) publishRelay({ t: 'bye', id: rid });
+      const old = Array.from(conns.values());
+      conns.clear(); others.clear();
+      for (const c of old) { try { c.close(); } catch (e) { } }
+      if (peer) { try { peer.destroy(); } catch (e) { } }
+      for (const c of relays) { try { c.end(false); } catch (e) { } }
+      peer = null; peerUp = false; relays = []; topic = ''; rid = null; myRole = null; myCode = null; tries = 0;
+      updateOnline();
+      emitPeers();
+    }
+    function ensure() {
+      const role = mine.role, code = mine.g;
+      if (!role || !code) { if (rid) teardown(); return; }
+      if (rid && role === myRole && code === myCode) return;
+      teardown();
+      myRole = role; myCode = code;
+      rid = Math.random().toString(36).slice(2, 12);
+      if (hasPeer) startPeer(role, code);
+      if (hasRelay) startRelay(code);
+      updateOnline();
+    }
+
+    // Heartbeat on the relay, and notice players who went quiet.
+    setInterval(() => {
+      if (!rid) return;
+      if (needRelay()) publishRelay({ t: 'p', id: rid, s: seq, p: mine });
+      let changed = false;
+      for (const [id, e] of others) {
+        const a = alive(e);
+        if (a !== e.alive) { e.alive = a; changed = true; }
+        if (!a && Date.now() - e.heard > 120000) others.delete(id);
+      }
+      if (changed) emitPeers();
+    }, BEAT);
+    window.addEventListener('pagehide', () => { if (rid) publishRelay({ t: 'bye', id: rid }); });
 
     return {
       presence(patch) {
         const n = Object.assign({}, mine);
         for (const k in patch) { if (patch[k] === null || patch[k] === undefined) delete n[k]; else n[k] = patch[k]; }
         mine = n;
+        seq += 1;
         ensure();
-        for (const r of conns.values()) send(r);
+        sendAll();
         return Promise.resolve();
       },
       peers,
@@ -1023,7 +1132,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
   const $ = (s, r) => (r || document).querySelector(s);
   const WIN = Engine.WINDOW;
   const NAMES = { E: 'Kaboom Cat', D: 'Tuna Time', N: 'Nope Paw', A: 'Pounce', S: 'Nap Time', F: 'Big Eyes', H: 'Zoomies', P: 'Fortune Cat', '1': 'Sir Tuxedo', '2': 'Marmalade', '3': 'Calico Jo', '4': 'Smokey', '5': 'Siamese Sue' };
-  const ROLE = { E: 'Exploding cat', D: 'Defuse', N: 'Nope', A: 'Attack', S: 'Skip', F: 'Favor', H: 'Shuffle', P: 'See the Future' };
+  const ROLE = { E: 'Bomb', D: 'Defuse', N: 'Nope', A: 'Attack', S: 'Skip', F: 'Favor', H: 'Shuffle', P: 'Peek' };
   const COMBO_TEXT = 'Cat card. Does nothing alone. Play 2 matching cats to steal a random card, 3 matching cats to name a card and take it, or 5 different cards to take any card from the discard pile.';
   const TEXT = {
     E: 'Draw this and you explode, unless you have a Tuna Time to calm it down.',
@@ -1352,7 +1461,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
       <div class="bigcode">${esc(code)}</div>
       ${full ? `<p class="warn">Someone else already joined this game. Ask your friend to start a new one.</p>` :
         `<div class="paws" aria-hidden="true"><i></i><i></i><i></i></div>
-      <p class="lede" id="joinmsg">${partnerHere ? 'Found it. Dealing the cards…' : slow ? 'Still looking. Check the code and make sure your friend’s game is open. If it never connects, one of your networks may block direct connections: try mobile data or another Wi-Fi.' : 'Looking for your friend’s game…'}</p>`}
+      <p class="lede" id="joinmsg">${partnerHere ? 'Found it. Dealing the cards…' : slow ? 'Still looking. Check the code and make sure your friend’s game is open on their phone.' : 'Looking for your friend’s game…'}</p>`}
       <button class="link" data-act="leave">Cancel</button>
     </section>`;
   }
@@ -1558,7 +1667,7 @@ input#code { font-family: var(--display); letter-spacing: .25em; text-transform:
     if (v.peek && v.peek.id > seenPeek) {
       const cards = v.peek.cards.split('');
       const row = cards.map((c, i) => `<figure>${cardSVG(c, 'mid')}<figcaption>${['Next', '2nd', '3rd'][i]}</figcaption></figure>`).join('');
-      return { key: 'peek:' + v.peek.id, html: sheet('See the future', `<h2>Top of the draw pile</h2><p class="sub">Only you can see this. ${cards.includes('E') ? 'Careful.' : 'No Kaboom Cat in sight.'}</p><div class="row three">${row || '<span class="dim">The pile is empty.</span>'}</div><div class="btns one"><button class="btn hot" data-act="seen">Got it</button></div>`) };
+      return { key: 'peek:' + v.peek.id, html: sheet('Peek',`<h2>Top of the draw pile</h2><p class="sub">Only you can see this. ${cards.includes('E') ? 'Careful.' : 'No Kaboom Cat in sight.'}</p><div class="row three">${row || '<span class="dim">The pile is empty.</span>'}</div><div class="btns one"><button class="btn hot" data-act="seen">Got it</button></div>`) };
     }
     if (local && local.k === 'triple') {
       const grid = ORDER.split('').map((c) => `<button class="pickcard" data-act="name" data-t="${c}">${cardSVG(c)}</button>`).join('');

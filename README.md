@@ -16,10 +16,13 @@ Keep both screens on during a game. The game asks the browser to keep the screen
 
 Everything is in `index.html`. There is no build step and no server of its own.
 
-- **Connection:** the phones connect directly with [PeerJS](https://peerjs.com). PeerJS's public server only introduces the two phones to each other.
+- **Connection:** the phones try to connect directly with [PeerJS](https://peerjs.com). PeerJS's public server only introduces the two phones to each other.
+- **Fallback relay:** many mobile networks block direct connections. When there is no direct line, game messages go through two free public MQTT brokers ([HiveMQ](https://www.hivemq.com/mqtt/public-mqtt-broker/) and [EMQX](https://www.emqx.com/en/mqtt/public-mqtt5-broker)) at the same time, so either one can be down. No account is needed. Once a direct line opens, the relay is no longer used.
 - **Rules:** the host's phone holds the full game state and checks every move. The guest only receives what they are allowed to see.
 - **Card art:** every card is drawn as SVG in code.
 
-## If phones can't connect
+The public brokers are free test servers with no guarantees, and anyone who knows a game's code could read that game's messages while they go through the relay, including the guest's hand and chat. That's fine for a casual game, but don't share anything private in the chat.
 
-Some mobile and office networks block direct connections. To fix that, add a TURN relay server to the `TURN` list at the top of the connection script in `index.html`, using credentials from a TURN provider.
+## Credits
+
+Inspired by the mechanics of Exploding Kittens. All names, card art and text in this game are original. Uses [PeerJS](https://github.com/peers/peerjs) and [MQTT.js](https://github.com/mqttjs/MQTT.js) (both MIT licence) and the Google Fonts Bowlby One and Bricolage Grotesque (SIL Open Font License).
